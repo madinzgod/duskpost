@@ -46,6 +46,25 @@ export function drawScene(ctx, v, world, plane, fx, game, t) {
   drawWorldObjects(ctx, v, world, plane, fx, t, game.lightFrac);
   drawParticles(ctx, v, fx);
   const scale = plane.onStrip || plane.onWater ? 1.24 : 1.34;
+  // Her shadow on the strip: the one state where she sits on a hard
+  // surface in full view, and the delivery frame showed her pasted
+  // onto the pavement — drawSeaplane draws no shadow in any state.
+  // Airborne she needs none (a ground shadow projects below the frame
+  // at altitude, proved in V2); on water the spray grounds her. On
+  // the strip, a soft pool under the floats stands her on the ground.
+  if (plane.onStrip) {
+    ctx.save();
+    ctx.translate(VIEW_W / 2 + v.shakeX, VIEW_H * 0.665 + 44 * scale);
+    ctx.scale(1, 0.16);
+    const pool = ctx.createRadialGradient(0, 0, 4, 0, 0, 105);
+    pool.addColorStop(0, 'rgba(8,12,10,0.34)');
+    pool.addColorStop(1, 'rgba(8,12,10,0)');
+    ctx.fillStyle = pool;
+    ctx.beginPath();
+    ctx.arc(0, 0, 105, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   drawSeaplane(ctx, VIEW_W / 2 + v.shakeX, VIEW_H * 0.665, scale, plane, t);
   drawSpray(ctx, plane, t);
 }
@@ -306,14 +325,19 @@ function drawSquall(ctx, v, sq, t) {
   // night-violet at two kilometres sits on the horizon like ink. Blend
   // the puff colours toward the mauve by the same range that fades
   // them, so distance softens the bank's colour as well as its alpha.
-  const haze = clamp(0.95 - s, 0, 0.62);
-  const blend = (r, g, b, a) => `rgba(${Math.round(r + (140 - r) * haze)},${Math.round(g + (92 - g) * haze)},${Math.round(b + (108 - b) * haze)},${a})`;
+  // The blend runs further in V7 (cap 0.74 toward a lighter mauve)
+  // and the bellies lay down less alpha: at the cover's range the bank
+  // still composited into a dark row behind the hero ring — weather
+  // second, smear first — and what was left to change was the colour
+  // and weight of the puffs themselves at distance, not the staging.
+  const haze = clamp(0.95 - s, 0, 0.74);
+  const blend = (r, g, b, a) => `rgba(${Math.round(r + (150 - r) * haze)},${Math.round(g + (102 - g) * haze)},${Math.round(b + (116 - b) * haze)},${a})`;
   for (const [fx, fy, fr] of puffs) {
-    softPuff(ctx, base.x + fx * halfW, baseY - bodySpan * fy, fr * halfW * 1.1, blend(38, 34, 56, 0.95), blend(38, 34, 56, 0));
+    softPuff(ctx, base.x + fx * halfW, baseY - bodySpan * fy, fr * halfW * 1.1, blend(38, 34, 56, 0.88), blend(38, 34, 56, 0));
   }
   for (const [fx, fy, fr] of puffs) {
     if (fy < 0.5) continue;
-    softPuff(ctx, base.x + fx * halfW - halfW * 0.02, baseY - bodySpan * (fy + 0.05), fr * halfW * 0.66, blend(96, 84, 120, 0.5), blend(96, 84, 120, 0));
+    softPuff(ctx, base.x + fx * halfW - halfW * 0.02, baseY - bodySpan * (fy + 0.05), fr * halfW * 0.66, blend(96, 84, 120, 0.56), blend(96, 84, 120, 0));
   }
 
   // Rain-light at the sea line: a soft pale band where the curtain
@@ -389,15 +413,26 @@ function drawStorm(ctx, v, storm, t) {
   // the two widest layers are the weakest, so the silhouette feathers
   // into the air instead of ending on one straight diagonal line.
   const slant = R * 0.14;
+  // The shaft's strength survives range: at the storm frame's own
+  // distance the factor is 1 and the shaft is as tuned, but a cell two
+  // kilometres off — the approach frame's — drew the same alphas
+  // against a bright sea gradient and vanished, leaving the mass
+  // hanging in the sky with no rain under it.
+  const shaftBoost = clamp(1.6 - s * 0.35, 1, 1.9);
   // The shaft hugs the column's foot: at half-width 0.52R–0.62R its
   // slanted layer edges crossed most of the frame at close range and
   // read as diagonal light bands on the sea, not rain under the cell.
   // Narrower, with one more feather layer and finer streaks, it stays
-  // under the cloud it falls from.
-  for (const [shrink, a] of [[-0.14, 0.02], [-0.07, 0.032], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]]) {
+  // under the cloud it falls from. The two widest layers are dimmer
+  // again in V7: even narrowed, their straight slanted edges crossed
+  // open sea in the storm frame and read as bands — at a third of the
+  // core's alpha and pulled inboard, their edges sit under the lit
+  // core instead of crossing bare water.
+  for (const [shrink, a] of [[-0.10, 0.010], [-0.045, 0.018], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]]) {
+    const layerA = a * shaftBoost;
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
-    grad.addColorStop(0, `rgba(168,182,205,${a + 0.10})`);
-    grad.addColorStop(1, `rgba(168,182,205,${a * 0.4})`);
+    grad.addColorStop(0, `rgba(168,182,205,${layerA + 0.10 * shaftBoost})`);
+    grad.addColorStop(1, `rgba(168,182,205,${layerA * 0.4})`);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(cx - R * (0.40 - shrink), baseY);
@@ -407,7 +442,7 @@ function drawStorm(ctx, v, storm, t) {
     ctx.closePath();
     ctx.fill();
   }
-  ctx.strokeStyle = 'rgba(190,200,220,0.15)';
+  ctx.strokeStyle = `rgba(190,200,220,${0.15 * shaftBoost})`;
   ctx.lineWidth = Math.max(1, s * 0.35);
   for (let i = 0; i < 15; i += 1) {
     const fx = -0.40 + i * 0.057;
@@ -416,6 +451,17 @@ function drawStorm(ctx, v, storm, t) {
     ctx.moveTo(cx + fx * R, baseY + (seaY - baseY) * drift * 0.2);
     ctx.lineTo(cx + fx * R + slant * (0.4 + drift), baseY + (seaY - baseY) * (0.55 + drift * 0.4));
     ctx.stroke();
+  }
+
+  // Far weather beyond the shoulder: three very large, soft puffs of
+  // lighter violet-grey reaching west and up from the anvil, at an
+  // alpha the sky keeps — the cell's weather continuing off-frame.
+  // Without them the mass ended at its own silhouette and the storm
+  // frame's top-left was bare gradient: the smoothest area of the
+  // sheet, in the frame whose whole subject is weather. Drawn before
+  // the body, so the column overlaps them and they read as distance.
+  for (const [fx, fy, fr, a] of [[-1.18, 0.88, 0.52, 0.20], [-1.42, 1.0, 0.62, 0.16], [-0.95, 1.04, 0.5, 0.15]]) {
+    softPuff(ctx, cx + fx * R, baseY - (baseY - topY) * fy, fr * R, `rgba(104,80,110,${a})`, 'rgba(104,80,110,0)');
   }
 
   // The cloud body: a tower of overlapping puffs between the cloud base
@@ -470,7 +516,7 @@ function drawStorm(ctx, v, storm, t) {
     return h - Math.floor(h);
   };
   for (let i = 0; i < 16; i += 1) {
-    const fx = -0.85 + (i / 15) * 1.7 + (grain(i, 1) - 0.5) * 0.09;
+    const fx = -1.1 + (i / 15) * 2.0 + (grain(i, 1) - 0.5) * 0.09;
     const fy = 0.80 + grain(i, 2) * 0.20;
     const fr = 0.10 + grain(i, 3) * 0.07;
     const lit = i % 3 === 2;
@@ -480,6 +526,25 @@ function drawStorm(ctx, v, storm, t) {
       baseY - bodySpan * fy,
       fr * R,
       lit ? 'rgba(122,96,128,0.34)' : 'rgba(30,26,48,0.40)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
+  }
+  // A second grain at a larger scale over the shoulder's outer half:
+  // the first pass's puffs are 0.10–0.17R and melt into the dome at
+  // screenshot size, so the shoulder thinned to smoothness exactly
+  // where it runs off-frame; these run 0.16–0.26R, coarse enough to
+  // keep a scalloped structure out to the mass's western edge.
+  for (let i = 0; i < 8; i += 1) {
+    const fx = -1.15 + (i / 7) * 1.05 + (grain(i, 11) - 0.5) * 0.08;
+    const fy = 0.74 + grain(i, 12) * 0.26;
+    const fr = 0.16 + grain(i, 13) * 0.10;
+    const lit = i % 3 === 1;
+    softPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      fr * R,
+      lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.36)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -513,8 +578,6 @@ function drawStorm(ctx, v, storm, t) {
     glow.addColorStop(1, 'rgba(255,244,200,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(cx - R * 0.55, glowY - R * 0.55, R * 1.1, R * 1.1);
-    ctx.strokeStyle = `rgba(255,240,190,${0.9 * flash})`;
-    ctx.lineWidth = Math.max(2.4, s * 0.8);
     ctx.shadowColor = 'rgba(255,240,190,0.9)';
     ctx.shadowBlur = 18;
     // A bolt with a fork: one hairline zigzag read as a crack on the
@@ -526,12 +589,24 @@ function drawStorm(ctx, v, storm, t) {
         nodes[i - 1][1] + (seaY - baseY) / 4,
       ]);
     }
+    // A wide, faint pass under the core — the bolt's body. At the old
+    // max(2.4, s × 0.8) the core was a 2–3 px hairline and read as a
+    // crack scratched on the cell, with the shadowBlur doing all the
+    // work; a strike is a channel of light, thick at its heart.
+    ctx.strokeStyle = `rgba(255,240,190,${0.22 * flash})`;
+    ctx.lineWidth = Math.max(6, s * 3.0);
+    ctx.beginPath();
+    ctx.moveTo(nodes[0][0], nodes[0][1]);
+    for (let i = 1; i < nodes.length; i += 1) ctx.lineTo(nodes[i][0], nodes[i][1]);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,240,190,${0.9 * flash})`;
+    ctx.lineWidth = Math.max(3.2, s * 1.15);
     ctx.beginPath();
     ctx.moveTo(nodes[0][0], nodes[0][1]);
     for (let i = 1; i < nodes.length; i += 1) ctx.lineTo(nodes[i][0], nodes[i][1]);
     ctx.stroke();
     ctx.strokeStyle = `rgba(255,240,190,${0.55 * flash})`;
-    ctx.lineWidth = Math.max(1.6, s * 0.5);
+    ctx.lineWidth = Math.max(2.2, s * 0.7);
     ctx.beginPath();
     ctx.moveTo(nodes[2][0], nodes[2][1]);
     ctx.lineTo(nodes[2][0] - R * 0.09, nodes[2][1] + (seaY - baseY) * 0.22);
@@ -617,6 +692,16 @@ function drawIsland(ctx, v, isl, t, light, world) {
   const darkLand = Math.min(0.85, dark * 1.35);
   const tone = (hex, duskHex) => mixc(mixc(hex, '#8a5570', haze), duskHex, dark);
   const toneLand = (hex, duskHex) => mixc(mixc(hex, '#8a5570', haze), duskHex, darkLand);
+  // A waterline shadow first: three nested shades just outside the
+  // beach — a gradient built from paths, each step too faint to show
+  // its own edge. Without it the shore was a clean tan line on uniform
+  // teal and the island read pasted onto the sea; with the water
+  // darkened against the land, the island stands in it.
+  for (const [sc, a] of [[1.36, 0.05], [1.30, 0.08], [1.245, 0.12]]) {
+    islandPath(ctx, v, isl, sc, 0);
+    ctx.fillStyle = `rgba(8,24,32,${a})`;
+    ctx.fill();
+  }
   // Foam line at the water's edge, then the beach, then the raised land inside it.
   islandPath(ctx, v, isl, 1.23, 0);
   ctx.fillStyle = 'rgba(230,246,244,0.28)';
@@ -646,15 +731,28 @@ function drawIsland(ctx, v, isl, t, light, world) {
   ctx.save();
   islandPath(ctx, v, isl, 1.0, 0);
   ctx.clip();
-  for (let i = 0; i < 6; i += 1) {
+  // Nine patches now, and the last three form an outer ring: the first
+  // six all ringed the island's centre at 0.3–0.62r, so the outer
+  // slope — the ground an approach camera actually looks at, and the
+  // whole of a mid-range island's silhouette — carried no texture at
+  // all and the land read flat at every range. The outer ring stands
+  // at its own slope height (the heightAt profile the palms use), so
+  // a patch near the beach lies on the beach's slope, not at the
+  // plateau's height projected over it.
+  for (let i = 0; i < 9; i += 1) {
     const a = i * 2.13 + isl.z * 0.013;
-    const rr = isl.r * (0.3 + 0.16 * (i % 3));
-    const pp = project(v, isl.x + Math.cos(a) * rr, isl.h * 0.55, isl.z + Math.sin(a) * rr * 0.8);
+    const outer = i >= 6;
+    const rr = outer ? isl.r * (0.58 + 0.13 * (i - 6)) : isl.r * (0.3 + 0.16 * (i % 3));
+    const d = rr / (isl.r * 1.0);
+    const ph = outer
+      ? isl.h * Math.min(1, Math.max(0, (1 - d / 1.25)) * 1.6)
+      : isl.h * 0.55;
+    const pp = project(v, isl.x + Math.cos(a) * rr, ph, isl.z + Math.sin(a) * rr * 0.8);
     if (!pp) continue;
     const rad = Math.max(6, pp.s * isl.r * 0.3);
     const toneHex = i % 2 === 0 ? toneLand('#5d8a5e', '#2c4a34') : toneLand('#2e5a44', '#142a20');
     const g = ctx.createRadialGradient(pp.x, pp.y, rad * 0.15, pp.x, pp.y, rad);
-    g.addColorStop(0, hexA(toneHex, 0.5));
+    g.addColorStop(0, hexA(toneHex, 0.58));
     g.addColorStop(1, hexA(toneHex, 0));
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -779,10 +877,16 @@ function drawHuts(ctx, v, isl, t) {
  *  delivery somewhere to have come from. Toned with the island's own
  *  haze and light, like everything else on the ground. */
 function drawDepot(ctx, v, isl, tone, toneLand) {
-  const base = project(v, isl.x + isl.stripWid / 2 + 15, isl.h * 0.98, isl.z + 16);
+  const base = project(v, isl.x + isl.stripWid / 2 + 15, isl.h * 0.98, isl.z + 21);
   if (!base || base.s < 0.4) return;
   const s = base.s;
-  const u = s; // one metre in screen px at the depot
+  // One metre in screen px at the depot, at 0.85 of the strip's own
+  // scale: drawn at full scale the crates stood ~55 px in the delivery
+  // frame and the cluster ran off its right edge, the frame's second
+  // subject after the aircraft. A touch smaller and a step further
+  // north, the whole freight corner sits inside the frame and the
+  // aircraft keeps it. (dz 16 → 21 is the step north.)
+  const u = s * 0.85;
   // The worn patch: bare earth where the freight work happens.
   ctx.save();
   ctx.translate(base.x, base.y);
@@ -880,18 +984,46 @@ function drawDock(ctx, v, isl) {
 }
 
 function islandPath(ctx, v, isl, scaleR, lift) {
-  ctx.beginPath();
-  let started = false;
-  for (let i = 0; i <= isl.outline.length; i += 1) {
-    const idx = i % isl.outline.length;
-    const a = (idx / isl.outline.length) * Math.PI * 2;
-    const rr = isl.r * isl.outline[idx] * scaleR;
+  const n = isl.outline.length;
+  // When every outline point projects, the shore runs as quadratic
+  // curves through the segments' midpoints, each outline point a
+  // control: a coast, not a cut-card polygon. Joined with straight
+  // lines, each of the 16 segments was 100–300 px of ruler-straight
+  // beach at screenshot range. When any point sits behind the camera
+  // the polyline below still draws what it can.
+  const pts = [];
+  let all = true;
+  for (let i = 0; i < n; i += 1) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = isl.r * isl.outline[i] * scaleR;
     const p = project(v, isl.x + Math.cos(a) * rr, lift, isl.z + Math.sin(a) * rr);
-    if (!p) continue;
-    if (!started) {
-      ctx.moveTo(p.x, p.y);
-      started = true;
-    } else ctx.lineTo(p.x, p.y);
+    if (!p) {
+      all = false;
+      break;
+    }
+    pts.push(p);
+  }
+  ctx.beginPath();
+  if (all && pts.length >= 4) {
+    ctx.moveTo((pts[n - 1].x + pts[0].x) / 2, (pts[n - 1].y + pts[0].y) / 2);
+    for (let i = 0; i < n; i += 1) {
+      const p = pts[i];
+      const q = pts[(i + 1) % n];
+      ctx.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2);
+    }
+  } else {
+    let started = false;
+    for (let i = 0; i <= n; i += 1) {
+      const idx = i % n;
+      const a = (idx / n) * Math.PI * 2;
+      const rr = isl.r * isl.outline[idx] * scaleR;
+      const p = project(v, isl.x + Math.cos(a) * rr, lift, isl.z + Math.sin(a) * rr);
+      if (!p) continue;
+      if (!started) {
+        ctx.moveTo(p.x, p.y);
+        started = true;
+      } else ctx.lineTo(p.x, p.y);
+    }
   }
   ctx.closePath();
 }
