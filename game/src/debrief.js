@@ -257,6 +257,65 @@ export function drawRouteMap(ctx, world, game, plane, t) {
     });
   }
 
+  // V23: a map legend in the middle void — the list sits left, the
+  // score sits right, and ~400×200 px between them was empty panel
+  // (V23 audit problem 4). Standard map furniture: every item is a
+  // symbol already drawn on the band above, so nothing here invents
+  // anything about the run.
+  {
+    const lx = 480;
+    ctx.textAlign = 'left';
+    ctx.font = '600 18px system-ui, sans-serif';
+    // Flight route: a gold line sample.
+    ctx.strokeStyle = '#ffc46b';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(lx, 534);
+    ctx.lineTo(lx + 34, 534);
+    ctx.stroke();
+    ctx.fillStyle = '#ffe9c9';
+    ctx.fillText('FLIGHT ROUTE', lx + 44, 540);
+    // Storm cell: a purple dot with a bolt.
+    const sg2 = ctx.createRadialGradient(lx + 17, 568, 2, lx + 17, 568, 12);
+    sg2.addColorStop(0, 'rgba(90,60,120,0.9)');
+    sg2.addColorStop(1, 'rgba(90,60,120,0)');
+    ctx.fillStyle = sg2;
+    ctx.beginPath();
+    ctx.arc(lx + 17, 568, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffd9a0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(lx + 20, 560);
+    ctx.lineTo(lx + 14, 568);
+    ctx.lineTo(lx + 20, 568);
+    ctx.lineTo(lx + 14, 576);
+    ctx.stroke();
+    ctx.fillStyle = '#ffe9c9';
+    ctx.fillText('STORM CELL', lx + 44, 574);
+    // Squall line: a mauve dash.
+    ctx.strokeStyle = 'rgba(190,140,180,0.9)';
+    ctx.lineWidth = 8;
+    ctx.setLineDash([16, 5]);
+    ctx.beginPath();
+    ctx.moveTo(lx, 602);
+    ctx.lineTo(lx + 34, 602);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffe9c9';
+    ctx.fillText('SQUALL LINE', lx + 44, 608);
+    // Rescue boat: a red dot.
+    ctx.fillStyle = '#c8552e';
+    ctx.strokeStyle = '#ffe9c9';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(lx + 17, 636, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffe9c9';
+    ctx.fillText('RESCUE BOAT', lx + 44, 642);
+  }
+
   // Score block, bottom right.
   ctx.textAlign = 'right';
   ctx.fillStyle = '#ffc46b';

@@ -164,23 +164,33 @@ function drawSea(ctx, v, plane, light) {
   // everywhere. Each row is two or three short dashes with seeded gaps and a
   // jittered centre — one smooth dash per row at even spacing reads as a
   // staircase under the sun, where broken dashes read as light on water.
+  // V23: the rows still read as a regimented ladder of equal bars in a
+  // narrow column, fading out below y520 (V23 audit problem 6) — the
+  // column is ±27 px wide, the segments share one y per row, and the
+  // widths sit in a narrow band. The path now fans out toward the
+  // camera (a glitter path widens with perspective), each segment
+  // takes its own y, the widths vary wider, and the alpha floor lifts
+  // for the lower rows so the path holds to the frame's bottom.
   ctx.fillStyle = 'rgba(255,190,110,0.5)';
   for (let i = 0; i < 46; i += 1) {
     const row = i / 46;
     const y = v.horizon + 6 + row * row * (VIEW_H - v.horizon) * 0.92 + Math.sin(i * 39.7) * 2.4;
-    const wob = Math.sin(i * 12.9898) * 26 * row + Math.sin(i * 47.31) * 17 * row + Math.sin(plane.z * 0.05 + i) * 6;
-    const w = 8 + row * 90 * (0.4 + 0.6 * Math.abs(Math.sin(i * 78.233)));
-    ctx.globalAlpha = (0.12 + row * 0.4) * 0.85;
+    const wob = Math.sin(i * 12.9898) * 26 * row + Math.sin(i * 47.31) * 17 * row + Math.sin(plane.z * 0.05 + i) * 6
+      + Math.sin(i * 0.35) * 34 * row * row;
+    const w = 8 + row * 90 * (0.4 + 0.6 * Math.abs(Math.sin(i * 78.233))) + row * row * 40;
+    ctx.globalAlpha = (0.16 + row * 0.4) * 0.85;
     const cxp = VIEW_W * 0.335 + wob;
     const segs = 2 + (i % 3 === 0 ? 1 : 0);
     for (let sg = 0; sg < segs; sg += 1) {
       // Per-segment alpha from a hash, so some dashes nearly vanish: a path
       // of even dashes reads as steps however it is broken up.
       const segA = 0.35 + 0.65 * Math.abs(Math.sin(i * 31.7 + sg * 7.9));
-      const off = (sg - (segs - 1) / 2) * (w / segs) * 1.35 + Math.sin(i * 5.3 + sg * 9.1) * 4 * row;
-      const sw = (w / segs) * (0.45 + 0.4 * Math.abs(Math.sin(i * 23.7 + sg * 4.3)));
-      ctx.globalAlpha = (0.12 + row * 0.4) * 0.85 * segA;
-      ctx.fillRect(cxp + off - sw / 2, y, sw, 1.6 + row * 2.2);
+      const off = (sg - (segs - 1) / 2) * (w / segs) * (1.35 + row * 1.2) + Math.sin(i * 5.3 + sg * 9.1) * 4 * row;
+      const sw = (w / segs) * (0.3 + 0.7 * Math.abs(Math.sin(i * 23.7 + sg * 4.3)));
+      const yjH = Math.sin(i * 17.3 + sg * 5.1) * 43758.5453;
+      const yj = (yjH - Math.floor(yjH) - 0.5) * 8 * row;
+      ctx.globalAlpha = (0.16 + row * 0.4) * 0.85 * segA;
+      ctx.fillRect(cxp + off - sw / 2, y + yj, sw, 1.6 + row * 2.2);
     }
   }
   ctx.globalAlpha = 1;
@@ -415,6 +425,48 @@ function drawSea(ctx, v, plane, light) {
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
     if (fwd < 400 || fwd > 1400) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
+    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+  }
+  // V23: a targeted lower-right deep pass — the cover's and rescue's
+  // lower-right deep sea (px 850–1280, py horizon+210…+310) is flat
+  // teal (175 px >12 in a 43,000 px box, V23 audit problem 5): the
+  // mid-band passes stop at horizon+260 and the near-water pass
+  // spreads 180 dashes over the whole sea, so the deep lower-right
+  // carries ~14 dim dashes, most below the +12 cut, and the frame
+  // reads lopsided at judge size. This pass samples only that box,
+  // same dash shape and alpha as the other mid-band passes.
+  // FIRST RENDER FAILED — the gate was wrong: it used the fwd numbers
+  // from the V14–V21 comments (fwd 361–534 for this window), but a
+  // probe of the real projection proves those numbers are stale —
+  // at the cover camera (camY 8.5, focal 1177.6, horizon 348) py 560
+  // maps to fwd 47 and py 660 to fwd 32, so the 300–600 gate kept
+  // NOTHING and the deep box measured byte-identical to V22. The
+  // gate is the measured range: fwd 25–60 keeps the whole window.
+  // The same probe shows the gate rejects the pass at the low
+  // approach camera (its py window maps to fwd 164–242), the
+  // delivery camera (fwd 66–97) and the storm camera (fwd
+  // 391–575) — and the sea draws before the islands, so a dash
+  // under land is covered.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 40; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 41.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 850 + hash(1) * 430;
+    const py = v.horizon + 210 + hash(2) * 100;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 25 || fwd > 60) continue;
     const right = (px - VIEW_W / 2) / s;
     const wx = v.camX + fwd * v.sinH + right * v.cosH;
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
@@ -845,15 +897,23 @@ function drawSquall(ctx, v, sq, t) {
   // jitter on the position (±0.015 halfW) and on the length
   // (±0.06 of the fall) breaks the barcode; the streaks stay
   // discrete (≥7 px apart at the cover camera) and in-cluster.
+  // V23: the streaks still read as an even comb behind the far island
+  // in the storm frame (V23 audit problem 9) — the V22 length/top
+  // jitter broke the fence at the cover's range (fall ~30 px) but at
+  // the storm camera the fall is ~80 px and the SPACING is still
+  // perfectly even (position jitter only ±0.015 halfW ≈ ±2 px,
+  // sub-visible). The V22 comment's "spacing stays even" does not
+  // survive this range. Hashed position jitter ±0.05 halfW and a
+  // per-streak width jitter break the comb; the V22 length/top
+  // jitter, the in-cluster gating and the 0.48 alpha are unchanged.
   ctx.strokeStyle = 'rgba(190,200,220,0.48)';
-  ctx.lineWidth = Math.max(3.5, s * 0.9);
   const streaks = Math.max(5, Math.floor(halfW / 8));
   for (let i = 0; i < streaks; i += 1) {
     const jh = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77) * 43758.5453;
       return h - Math.floor(h);
     };
-    const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76 + (jh(71) - 0.5) * 0.03;
+    const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76 + (jh(71) - 0.5) * 0.10;
     if (!inCluster(fx)) continue; // no streaks in the gaps: the rain breaks with the bank
     // V22: the streaks read as a picket fence above the island at full
     // size (audit problem 6 — proven by a streaks-off render): equal
@@ -861,20 +921,37 @@ function drawSquall(ctx, v, sq, t) {
     // 2.4 km is ~30 px, so the V19 jitter (±0.06 length, ±0.015
     // position) is sub-visible there. Lengths now vary by ±0.30 of
     // the fall and tops by ±0.15, so no two streaks share a top or a
-    // bottom; spacing stays even (rain in a shaft is evenly spaced)
-    // and alpha stays 0.48 (the V18 judge-size requirement). Ends are
-    // clamped so every streak is at least a quarter of the fall and
-    // none runs past the sea line.
+    // bottom; V23 adds position jitter (±0.05 halfW) and width jitter,
+    // because the even spacing itself reads as a comb at the storm
+    // camera's range (V23 audit problem 9). Alpha stays 0.48 (the
+    // V18 judge-size requirement). Ends are clamped so every streak
+    // is at least a quarter of the fall and none runs past the sea line.
     const drift = ((t * 0.8 + i * 0.29) % 1) * 0.3;
     const lenJit = (jh(72) - 0.5) * 0.6;
     const topJit = (jh(73) - 0.5) * 0.3;
     const top = Math.max(0, drift * 0.2 + topJit);
-    const end = Math.min(1.0, Math.max(top + 0.25, 0.82 + drift * 0.25 + lenJit));
+    // V23 rev2: position jitter alone did not break the comb at the
+    // storm camera — the bars are irregularly spaced now (gaps
+    // 11–27 px, proven by measurement), but they are still all
+    // full-length, parallel and equally bright, so they read as a
+    // fence. A third of the streaks are short (ending mid-fall),
+    // each streak takes its own alpha and slant, so the row is rain
+    // of different lengths and strengths, not bars. The fade is the
+    // same range fade the whole line uses (recomputed here so the
+    // per-streak alpha multiplies it instead of replacing it).
+    const short = jh(76) > 0.62;
+    const endBase = short ? 0.45 + jh(77) * 0.25 : 0.82 + drift * 0.25 + lenJit;
+    const end = Math.min(1.0, Math.max(top + 0.25, endBase));
+    const slant = halfW * (0.005 + jh(79) * 0.035);
+    const fade = clamp((s - 0.14) / 0.5, 0.35, 1);
+    ctx.lineWidth = Math.max(3.5, s * 0.9) * (0.8 + jh(75) * 0.4);
+    ctx.globalAlpha = fade * (0.65 + jh(78) * 0.35);
     ctx.beginPath();
     ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * top);
-    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * end);
+    ctx.lineTo(base.x + fx * halfW + slant, baseY + (seaY - baseY) * end);
     ctx.stroke();
   }
+  ctx.globalAlpha = clamp((s - 0.14) / 0.5, 0.35, 1);
   // Distance haze for the bank itself: the islands retint toward the
   // dusk mauve as they recede, and a bank that keeps its full
   // night-violet at two kilometres sits on the horizon like ink. Blend
@@ -1914,7 +1991,13 @@ function drawIsland(ctx, v, isl, t, light, world) {
   islandPath(ctx, v, isl, 1.23, 0);
   ctx.fillStyle = 'rgba(230,246,244,0.28)';
   ctx.fill();
+  // V23: one flat tan band reads as a ribbon (V23 audit problem 11).
+  // Wet sand at the waterline (darker, the sea's own tone) under dry
+  // sand above it — two values in the beach instead of one.
   islandPath(ctx, v, isl, 1.16, 0);
+  ctx.fillStyle = toneLand('#a67c4e', '#54402c');
+  ctx.fill();
+  islandPath(ctx, v, isl, 1.08, 0);
   ctx.fillStyle = toneLand('#d9a86c', '#6e5138');
   ctx.fill();
   islandPath(ctx, v, isl, 1.0, 0);
@@ -2045,7 +2128,16 @@ function drawIsland(ctx, v, isl, t, light, world) {
         const wz = isl.z + Math.sin(ang) * dist;
         const p = project(v, wx, world.heightAt(wx, wz), wz);
         if (!p) continue;
-        const r = clamp(p.s * 0.75, 0.9, 4.5);
+        // V23: the marks were identical flat ovals — same size, same
+        // horizontal angle, same tone — and at the close approach
+        // camera the 4.5 px cap binds, so the grass reads as coins
+        // at 2× (V23 audit problem 10). Hashed rotation (±30°),
+        // aspect (1.5–3×) and radius (±30%) break the identity; the
+        // marks stay short dashes, so the approach grass cannot turn
+        // scratchy.
+        const r = clamp(p.s * 0.75, 0.9, 4.5) * (0.7 + sh(i, 4) * 0.6);
+        const rot = (sh(i, 5) - 0.5) * 1.05;
+        const asp = 1.5 + sh(i, 6) * 1.5;
         // V12: the pale tufts went through toneLand, whose darkLand
         // is 0.71 at last light — they were dragged down to the
         // land's own dusk tone and the speckle's contrast collapsed
@@ -2068,7 +2160,7 @@ function drawIsland(ctx, v, isl, t, light, world) {
           ? hexA(tone('#7d9a63', '#33482e'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, r * 2.2, r * 0.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(p.x, p.y, r * asp, r * 0.5, rot, 0, Math.PI * 2);
         ctx.fill();
       }
       // V18 rev: the first render's global speckle lift changed ZERO
@@ -2103,7 +2195,6 @@ function drawIsland(ctx, v, isl, t, light, world) {
         }
         const sp = project(v, swx, shgt, swz);
         if (!sp || sp.x < 980 || sp.x > 1280 || sp.y < 560 || sp.y > 640) continue;
-        const sr = clamp(sp.s * 0.75, 0.9, 4.5);
         // V19: the pale marks here use a lighter dry tone
         // (tone('#a8b878','#4a5a3a')) — the old pale tone collapses
         // to the land tone at last light, so the east field's only
@@ -2115,11 +2206,17 @@ function drawIsland(ctx, v, isl, t, light, world) {
         // horizontal dashes, 2.2× as wide as tall: grass stubble,
         // not polka dots. The main world-space pass above keeps its
         // ellipses, so the approach grass cannot turn scratchy.
+        // V23: same variation as the main pass (rotation, aspect,
+        // radius) — the east field's marks were identical dashes too
+        // (V23 audit problem 10).
+        const sr = clamp(sp.s * 0.75, 0.9, 4.5) * (0.7 + sh(i, 64) * 0.6);
+        const srot = (sh(i, 65) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 66) * 1.5;
         ctx.fillStyle = sh(i, 63) > 0.62
           ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
-        ctx.ellipse(sp.x, sp.y, sr * 2.2, sr * 0.5, 0, 0, Math.PI * 2);
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.5, srot, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -3079,6 +3176,28 @@ function drawBoat(ctx, v, b, t) {
   ctx.lineTo(p.x - bowSign * w * 0.34, p.y + h * 0.5);
   ctx.closePath();
   ctx.fill();
+  // V23: the hull was one flat tone — a paper cutout at 2× (V23 audit
+  // problem 8). A darker strake along the bottom and a lighter deck
+  // edge along the top, as translucent overlays so they work in any
+  // boat's hue, give the hull two values and a top to catch the sun.
+  // Both bands stay inside the hull's own edges (the bow edge slopes,
+  // so the strake's top edge stops short of it).
+  ctx.fillStyle = 'rgba(20,30,34,0.28)';
+  ctx.beginPath();
+  ctx.moveTo(p.x - bowSign * w * 0.34, p.y + h * 0.5);
+  ctx.lineTo(p.x + bowSign * w * 0.30, p.y + h * 0.5);
+  ctx.lineTo(p.x + bowSign * w * 0.34, p.y + h * 0.28);
+  ctx.lineTo(p.x - bowSign * w * 0.32, p.y + h * 0.28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,240,220,0.22)';
+  ctx.beginPath();
+  ctx.moveTo(p.x - bowSign * w * 0.5, p.y - h * 0.5);
+  ctx.lineTo(p.x + bowSign * w * 0.42, p.y - h * 0.5);
+  ctx.lineTo(p.x + bowSign * w * 0.40, p.y - h * 0.34);
+  ctx.lineTo(p.x - bowSign * w * 0.46, p.y - h * 0.34);
+  ctx.closePath();
+  ctx.fill();
   // A dark waterline along the hull's bottom edge, so the hull reads as
   // a boat sitting IN the water and not as a flat plate laid on it
   // (REVISION: the white rescue hull read as a platform at 2×).
@@ -3090,6 +3209,12 @@ function drawBoat(ctx, v, b, t) {
   ctx.stroke();
   ctx.fillStyle = '#f3ead8';
   ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, h * 0.75);
+  // V23: the cabin was a plain white box — a roof line and a shaded
+  // side face, so it reads as a cabin with a top, not a block.
+  ctx.fillStyle = 'rgba(20,30,34,0.35)';
+  ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, Math.max(1, h * 0.12));
+  ctx.fillStyle = 'rgba(20,30,34,0.18)';
+  ctx.fillRect(p.x - bowSign * w * 0.05 + w * 0.10, p.y - h * 1.25, w * 0.08, h * 0.75);
   ctx.fillStyle = '#22333a';
   ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.1, p.y - h * 1.12, w * 0.22, h * 0.3);
   if (b.rescue) {
@@ -3099,7 +3224,12 @@ function drawBoat(ctx, v, b, t) {
     glow.addColorStop(0, `rgba(255,120,40,${0.85 * flicker})`);
     glow.addColorStop(1, 'rgba(255,120,40,0)');
     ctx.fillStyle = glow;
-    ctx.fillRect(p.x - w, p.y - h * 3.6, w * 2, w * 2);
+    // V23: the rect must contain the gradient circle it fills — the old
+    // rect (p.y − h×3.6, h×2 tall) cut the circle's top off, because
+    // 0.9w > h, so the glow appeared suddenly across a straight
+    // horizontal edge and read as an orange slab (V23 audit problem 7).
+    // A square of side 2w centred on the gradient's centre holds it.
+    ctx.fillRect(p.x - w, p.y - h * 2.6 - w, w * 2, w * 2);
     ctx.fillStyle = '#ffb35c';
     ctx.beginPath();
     ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.3), 0, Math.PI * 2);

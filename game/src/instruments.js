@@ -369,9 +369,16 @@ function drawApproachGuidance(ctx, W, H, plane, world) {
   ctx.lineWidth = 2;
   roundRect(ctx, gx - 74, gy - 30, 148, 60, 8);
   ctx.stroke();
+  // V23: the box held one bar and read as a crosshair, not a ladder
+  // (V23 audit problem 2). Three rungs and a centre spine — the green
+  // dot rides the rungs as the descent and the line-up change.
   ctx.beginPath();
   ctx.moveTo(gx - 74, gy);
   ctx.lineTo(gx + 74, gy);
+  ctx.moveTo(gx - 74, gy - 15);
+  ctx.lineTo(gx + 74, gy - 15);
+  ctx.moveTo(gx - 74, gy + 15);
+  ctx.lineTo(gx + 74, gy + 15);
   ctx.moveTo(gx, gy - 30);
   ctx.lineTo(gx, gy + 30);
   ctx.stroke();
