@@ -171,10 +171,19 @@ function drawSea(ctx, v, plane, light) {
   // camera (a glitter path widens with perspective), each segment
   // takes its own y, the widths vary wider, and the alpha floor lifts
   // for the lower rows so the path holds to the frame's bottom.
+  // V24: the fan reads but the path dies below y520 — the absolute
+  // brightness guard is still unmet (0 px >110 per 20 px band below
+  // y520, V24 audit problem 4): the loop's alpha tops out at ~0.34
+  // over a ~70-luminance sea, landing the lower dashes at ~100, below
+  // the eye's hold. Rows past y520 take a brighter colour and an
+  // alpha floor of 0.45, so the path holds to the frame's bottom
+  // without widening into a second column; the per-segment variation
+  // stays, so the lower dashes are light, not a lit bar.
   ctx.fillStyle = 'rgba(255,190,110,0.5)';
   for (let i = 0; i < 46; i += 1) {
     const row = i / 46;
     const y = v.horizon + 6 + row * row * (VIEW_H - v.horizon) * 0.92 + Math.sin(i * 39.7) * 2.4;
+    const lowRow = y > 520;
     const wob = Math.sin(i * 12.9898) * 26 * row + Math.sin(i * 47.31) * 17 * row + Math.sin(plane.z * 0.05 + i) * 6
       + Math.sin(i * 0.35) * 34 * row * row;
     const w = 8 + row * 90 * (0.4 + 0.6 * Math.abs(Math.sin(i * 78.233))) + row * row * 40;
@@ -189,7 +198,11 @@ function drawSea(ctx, v, plane, light) {
       const sw = (w / segs) * (0.3 + 0.7 * Math.abs(Math.sin(i * 23.7 + sg * 4.3)));
       const yjH = Math.sin(i * 17.3 + sg * 5.1) * 43758.5453;
       const yj = (yjH - Math.floor(yjH) - 0.5) * 8 * row;
-      ctx.globalAlpha = (0.16 + row * 0.4) * 0.85 * segA;
+      if (lowRow) ctx.fillStyle = 'rgba(255,214,150,0.85)';
+      else ctx.fillStyle = 'rgba(255,190,110,0.5)';
+      ctx.globalAlpha = lowRow
+        ? Math.max((0.16 + row * 0.4) * 0.85 * segA, 0.45 * segA)
+        : (0.16 + row * 0.4) * 0.85 * segA;
       ctx.fillRect(cxp + off - sw / 2, y + yj, sw, 1.6 + row * 2.2);
     }
   }
@@ -220,7 +233,10 @@ function drawSea(ctx, v, plane, light) {
     const wx = plane.x + hash(2) * 900 - 450 + Math.sin(i * 91.7) * 70;
     const p = project(v, wx, 0, wz + hash(3) * 60);
     if (!p || p.y < v.horizon) continue;
-    const len = clamp(p.s * 0.09, 2, 26);
+    const len = clamp(p.s * 0.09, 3.5, 26);
+    // V24: the floor was 2 px — at the cover's range the far dashes
+    // printed as 2×1 px dots, and the sea read as salt scattered on
+    // flat teal at 2× (V24 audit problem 5). 3.5 px reads as a dash.
     // V12: the floor was 0.05 — at the storm camera the open sea is
     // far water and the sparkle vanished into it, and the cover's
     // sea left of the glitter column was one flat field (V12 audit
@@ -369,9 +385,76 @@ function drawSea(ctx, v, plane, light) {
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
     const p = project(v, wx, 0, wz);
     if (!p) continue;
-    const len = clamp(p.s * 0.35, 4, 12);
-    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
-    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+    // V24: every dash was the same 4–12 px × 2 px tick at the same
+    // alpha, so the deep sea read as salt scattered on flat teal at
+    // 2× (V24 audit problem 5). Hashed length (×0.6–2.2), height
+    // (1–3 px) and alpha (×0.7–1.3) — wavelets, not confetti.
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V24: a targeted mid-right pass — the cover's horizon-adjacent
+  // mid-right sea (px 950–1280, py horizon+70…+110) is the thinnest
+  // sea box in the frame (230 px >12, V24 audit problem 6): the
+  // mid-band passes gate fwd 400–1400, but the probe proves this
+  // band is fwd 82–122 at the cover camera (py 430 → 122, py 470
+  // → 82), so the gate keeps nothing there — the same stale-fwd
+  // trap V23 caught for the deep pass. The same screen box is the
+  // approach camera's mid-right sea (fwd 470–742, 267 px >12,
+  // V24 audit problem 7), so one gate, fwd 80–750, serves both
+  // cameras. The storm camera's window maps to fwd 1108–1741, so
+  // the gate rejects the pass there. Dashes vary like the deep
+  // pass's (problem 5).
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 40; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 43.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 950 + hash(1) * 330;
+    const py = v.horizon + 70 + hash(2) * 40;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 750) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V24: a targeted delivery near-sea pass — the delivery frame's
+  // sea left of the strip (mid-left 270 px >12, far-left 321,
+  // V24 audit problem 8) sits at fwd 224–400 at the delivery camera
+  // (probe: py 400–440 → fwd 224–400, camY 17.5), inside NO
+  // existing gate. Same frame-biased sampling, own salt. The gate
+  // rejects the pass at the approach camera (its window maps to
+  // fwd 557–985) and the storm camera (fwd 1325–2344); at the cover
+  // camera it lands on the already-textured left sea (fwd 122–313).
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 40; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 47.9) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 446;
+    const py = v.horizon + 52 + hash(2) * 40;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 220 || fwd > 400) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
   // V17: a right-weighted second mid-band pass — the main pass
   // spreads its 150 dashes over the whole visible mid band, so
@@ -472,9 +555,12 @@ function drawSea(ctx, v, plane, light) {
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
     const p = project(v, wx, 0, wz);
     if (!p) continue;
-    const len = clamp(p.s * 0.35, 4, 12);
-    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
-    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+    // V24: dash variety, as in the mid-band pass above (V24 audit
+    // problem 5) — the deep sea's uniform ticks read as salt at 2×.
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
   // V18: a left-weighted mid-band pass — the mirror of V17's
   // right-weighted one. The cover's far-left sea (px 0–150, py
@@ -838,8 +924,14 @@ function drawSquall(ctx, v, sq, t) {
     // carried 10 streaks across 540 px, each ~8 px × 1 px at
     // alpha 0.13 (V15 audit problem 6). The top lifts a touch
     // more, 0.30 → 0.36, and the streaks below do the reading.
-    grad.addColorStop(0, 'rgba(168,182,205,0.36)');
-    grad.addColorStop(1, 'rgba(168,182,205,0.10)');
+    // V24 rev: the streak-alpha lift (0.48 → 0.54) moved sd 15.05 →
+    // 15.06 — the streaks are too small a fraction of the 52,000 px
+    // curtain box to move it (V24 audit problem 14). The wash is the
+    // lever: it covers the whole curtain. One measured step, top
+    // 0.36 → 0.40, bottom 0.10 → 0.12; if sd still does not lift,
+    // this reverts and the problem stands as not fixed.
+    grad.addColorStop(0, 'rgba(168,182,205,0.40)');
+    grad.addColorStop(1, 'rgba(168,182,205,0.12)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(base.x + (cl.c - 0.22) * halfW, baseY);
@@ -906,7 +998,12 @@ function drawSquall(ctx, v, sq, t) {
   // survive this range. Hashed position jitter ±0.05 halfW and a
   // per-streak width jitter break the comb; the V22 length/top
   // jitter, the in-cluster gating and the 0.48 alpha are unchanged.
-  ctx.strokeStyle = 'rgba(190,200,220,0.48)';
+  // V24: the curtain's texture metric fell sd 16.77 → 15.05 after
+  // the V23 streak jitter spread the bright pixels (V24 audit
+  // problem 14; bright counts identical). One measured step on the
+  // streak alpha, 0.48 → 0.54 — the rev2 short/alpha/slant
+  // irregularity is unchanged, so the comb stays broken.
+  ctx.strokeStyle = 'rgba(190,200,220,0.54)';
   const streaks = Math.max(5, Math.floor(halfW / 8));
   for (let i = 0; i < streaks; i += 1) {
     const jh = (salt) => {
@@ -1639,9 +1736,13 @@ function drawStorm(ctx, v, storm, t) {
     // cell fx 0.02, fy 0.02). Five smaller puffs (0.05–0.08R) at
     // tighter offsets overlap each other into one lumpy fire
     // instead of standing as separate discs.
+    // V24: the fire was five 0.05–0.08R puffs at 0.30 alpha overlapping
+    // into one bright blob that read as a detached pale orb at the
+    // bolt's head (V24 audit problem 9). Dimmer (0.20) so the fire is
+    // a cluster, and the channel glow below is lifted to match.
     for (let i = 0; i < 5; i += 1) {
       const fr = 0.05 + grain(i, 131) * 0.03;
-      softPuff(ctx, nodes[0][0] + (grain(i * 2 + 1, 132) - 0.5) * R * 0.06, nodes[0][1] + (grain(i * 2 + 2, 132) - 0.5) * R * 0.04, fr * R, `rgba(255,246,205,${0.30 * flash})`, 'rgba(255,246,205,0)');
+      softPuff(ctx, nodes[0][0] + (grain(i * 2 + 1, 132) - 0.5) * R * 0.06, nodes[0][1] + (grain(i * 2 + 2, 132) - 0.5) * R * 0.04, fr * R, `rgba(255,246,205,${0.20 * flash})`, 'rgba(255,246,205,0)');
     }
     ctx.save();
     ctx.lineJoin = 'round';
@@ -1689,8 +1790,12 @@ function drawStorm(ctx, v, storm, t) {
         // 2× (V17 audit problem 8). Smaller (0.13R/0.09R) and
         // fainter (0.08/0.11), so the cores overlap along the
         // channel into one lit ribbon instead of standing alone.
-        softPuff(ctx, px, py, R * 0.13, `rgba(255,244,200,${0.08 * flash})`, 'rgba(255,244,200,0)');
-        softPuff(ctx, px, py, R * 0.09, `rgba(255,250,220,${0.11 * flash})`, 'rgba(255,250,220,0)');
+        // V24: the channel glow sat at 0.08/0.11 while the fire above
+        // it burned at 0.30, so the light read as an orb detached from
+        // the channel (V24 audit problem 9). Lifted to 0.10/0.13 so
+        // the light continues down the strike.
+        softPuff(ctx, px, py, R * 0.13, `rgba(255,244,200,${0.10 * flash})`, 'rgba(255,244,200,0)');
+        softPuff(ctx, px, py, R * 0.09, `rgba(255,250,220,${0.13 * flash})`, 'rgba(255,250,220,0)');
       }
     }
     // V17: the mid pass was 0.07R wide at 0.13 alpha — a 61 px
@@ -1723,15 +1828,19 @@ function drawStorm(ctx, v, storm, t) {
       ctx.lineTo(x1, y1);
       ctx.stroke();
     };
+    // V24: the core was a ~2 px hairline — a crack, not a strike
+    // (V24 audit problem 9, measured: the y470 profile spikes to 190
+    // for 1–2 px). Body floor 6 → 9 and core floor 3.2 → 5.0, so the
+    // strike gains a body; the taper still thins the tip.
     for (let i = 1; i < nodes.length; i += 1) {
       const taper = 1 - ((i - 1) / (nodes.length - 2)) * 0.62;
       seg(nodes[i - 1][0], nodes[i - 1][1], nodes[i][0], nodes[i][1],
-        `rgba(255,240,190,${0.22 * flash})`, Math.max(2.2, Math.max(6, s * 3.0) * taper));
+        `rgba(255,240,190,${0.22 * flash})`, Math.max(3.2, Math.max(9, s * 4.0) * taper));
     }
     for (let i = 1; i < nodes.length; i += 1) {
       const taper = 1 - ((i - 1) / (nodes.length - 2)) * 0.62;
       seg(nodes[i - 1][0], nodes[i - 1][1], nodes[i][0], nodes[i][1],
-        `rgba(255,240,190,${0.9 * flash})`, Math.max(1.3, Math.max(3.2, s * 1.15) * taper));
+        `rgba(255,240,190,${0.9 * flash})`, Math.max(2.0, Math.max(5.0, s * 1.7) * taper));
     }
     // The fork tapers too, out to its own tip. Its reach is hashed
     // like the channel's steps (V11 audit problem 2): fixed offsets
@@ -1898,7 +2007,17 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     const cxp = p.x + (ox * mir * spreadK + (jit(i, 6) - 0.5) * 0.09 + (jit(i, 9) - 0.5) * 0.30) * w;
     const cyp = p.y + (voy - 0.10 + (jit(i, 7) - 0.5) * 0.06) * w * spread;
     const rr = r * w * 0.38 * (0.86 + jit(i, 8) * 0.3);
-    softPuff(ctx, cxp, cyp, rr, `rgba(146,84,110,${0.38 + jit(i, 5) * 0.18})`, 'rgba(146,84,110,0)', squash);
+    // V24: far clouds' lit tops (146,84,110) sit barely above their
+    // bellies, so a far cloud in the bright orange sky reads as a
+    // detached dark blob (V24 audit problem 15). For far clouds only,
+    // warm the lit top toward sunset orange and lift its alpha by hz
+    // — near clouds (hz = 0) are unchanged, so the V19 pale-disc
+    // lesson is not re-opened.
+    const warmK = hz / 0.4;
+    const lr = Math.round(146 + (200 - 146) * warmK);
+    const lg = Math.round(84 + (120 - 84) * warmK);
+    const lb = Math.round(110 + (100 - 110) * warmK);
+    softPuff(ctx, cxp, cyp, rr, `rgba(${lr},${lg},${lb},${0.38 + 0.07 * warmK + jit(i, 5) * 0.18})`, `rgba(${lr},${lg},${lb},0)`, squash);
   });
   if (big) {
     // V12: the lit row sat at p.y − w × spread × 0.34 and spanned
@@ -2923,13 +3042,21 @@ function drawPalm(ctx, v, x, y, z, s) {
   // darker fronds that clear the crown against the sky; the big
   // delivery palms keep the current draw.
   const small = base.s < 5;
+  // V24: at base.s < 2.5 (the cover island's and the storm islands'
+  // palms) the crown still reads as a round green ball on a stick
+  // at 2× (V24 audit problem 10): the 0.30h×0.22h hub plus its pale
+  // lit cap dominate, and the fronds blend into the crown. Tiny
+  // palms get a flatter, wider crown, longer fronds, and no lit cap
+  // (the cap is what makes the ball read as a shiny sphere). The
+  // gate keeps the approach island's palms (base.s ~3–5) untouched.
+  const tiny = base.s < 2.5;
   ctx.strokeStyle = small ? '#265c3a' : '#2f6b46';
   ctx.lineWidth = Math.max(2.2, base.s * 0.24);
   for (let i = 0; i < 9; i += 1) {
     const a = Math.PI * (0.05 + i * 0.115);
     const ox = tx + (ph(i, 41) - 0.5) * h * 0.30;
     const oy = ty - h * 0.10 + ph(i, 42) * h * 0.03;
-    const len = h * ((small ? 0.42 : 0.28) + ph(i, 43) * 0.14);
+    const len = h * ((tiny ? 0.68 : small ? 0.42 : 0.28) + ph(i, 43) * (tiny ? 0.17 : 0.14));
     const droop = h * (0.22 + ph(i, 44) * 0.14);
     // V14: every frond peaked below the crown's top edge, so no
     // frond ever broke the silhouette and the crown read as a disc
@@ -2968,7 +3095,7 @@ function drawPalm(ctx, v, x, y, z, s) {
     // matching lobes.
     ctx.fillStyle = '#2c5a3c';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.02, h * 0.30, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.02, h * (tiny ? 0.38 : 0.30), h * (tiny ? 0.14 : 0.22), 0, 0, Math.PI * 2);
     ctx.fill();
     // V16 rev: the first render still reads as two discs side by
     // side at 2× — the two lobes match each other too well, and
@@ -2979,11 +3106,16 @@ function drawPalm(ctx, v, x, y, z, s) {
     // no single clean arc; the fronds shorten (0.28–0.42h) and
     // droop less (0.22–0.36h) so they stay inside the crown's
     // silhouette instead of hanging past it.
+    // V24 rev: the first render's crowns are flatter but still a
+    // compact round mass — the bumps (0.10–0.12h tall) re-round the
+    // top edge the flat hub broke (V24 audit problem 10). For tiny
+    // palms the bumps flatten (×0.6 tall) so the top edge stays a
+    // ridge, not a dome.
     ctx.beginPath();
-    ctx.ellipse(tx - h * 0.14, ty - h * 0.04, h * 0.10, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx - h * 0.14, ty - h * 0.04, h * 0.10, h * (tiny ? 0.06 : 0.10), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(tx, ty - h * 0.14, h * 0.12, h * 0.12, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty - h * 0.14, h * 0.12, h * (tiny ? 0.07 : 0.12), 0, 0, Math.PI * 2);
     ctx.fill();
     // V17: the right bump sat at tx+0.14h, 0.09h — inside the hub's
     // right arc (0.30h), so the crown's right edge stayed the hub's
@@ -2991,10 +3123,10 @@ function drawPalm(ctx, v, x, y, z, s) {
     // 0.10h, and a mid-right bump at tx+0.20h, ty+0.08h breaks the
     // edge below it too.
     ctx.beginPath();
-    ctx.ellipse(tx + h * 0.18, ty - h * 0.08, h * 0.10, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx + h * 0.18, ty - h * 0.08, h * 0.10, h * (tiny ? 0.06 : 0.10), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(tx + h * 0.20, ty + h * 0.08, h * 0.08, h * 0.07, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx + h * 0.20, ty + h * 0.08, h * 0.08, h * (tiny ? 0.04 : 0.07), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#1e4229';
     ctx.beginPath();
@@ -3017,13 +3149,17 @@ function drawPalm(ctx, v, x, y, z, s) {
     // smaller ellipses, hashed per palm, so the top edge is broken
     // by mass, not one smooth arc; the bumps and middle fronds
     // define the silhouette again.
-    ctx.fillStyle = '#6f9a5f';
-    ctx.beginPath();
-    ctx.ellipse(tx - h * 0.13 + (ph(9, 47) - 0.5) * h * 0.06, ty - h * 0.09, h * 0.16, h * 0.11, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(tx + h * 0.02 + (ph(9, 48) - 0.5) * h * 0.06, ty - h * 0.11, h * 0.13, h * 0.10, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // V24: no lit cap on tiny palms (V24 audit problem 10) — the pale
+    // dome is what reads as a shiny ball at range.
+    if (!tiny) {
+      ctx.fillStyle = '#6f9a5f';
+      ctx.beginPath();
+      ctx.ellipse(tx - h * 0.13 + (ph(9, 47) - 0.5) * h * 0.06, ty - h * 0.09, h * 0.16, h * 0.11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(tx + h * 0.02 + (ph(9, 48) - 0.5) * h * 0.06, ty - h * 0.11, h * 0.13, h * 0.10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     // V15 rev: the crown is still one flat tone under the lit cap
     // (2× delivery crop) — two small mid-tone ellipses break the
     // disc into a mottled mass, hashed per palm so no two crowns
@@ -3074,8 +3210,13 @@ function drawLighthouse(ctx, v, isl, t) {
   // same bearing, step the alpha down toward the edges, so the fan
   // softens instead of cutting. Probe-only: keep only if the 2× crop
   // shows a softer fan.
+  // V24: the widest sector still ends on a hard line at alpha ~0.06,
+  // so the beam's lower edge reads as a straight cut (V24 audit
+  // problem 13). A fourth, wider, fainter sector feathers the outer
+  // edge instead of cutting it.
   const pulse = 0.16 + 0.06 * Math.sin(t * 2.2);
   for (const [a0, a1, frac] of [
+    [beamA - 0.02, beamA + 0.22, 0.18],
     [beamA, beamA + 0.19, 0.38],
     [beamA + 0.03, beamA + 0.16, 0.62],
     [beamA + 0.06, beamA + 0.13, 1.0],
@@ -3182,7 +3323,10 @@ function drawBoat(ctx, v, b, t) {
   // boat's hue, give the hull two values and a top to catch the sun.
   // Both bands stay inside the hull's own edges (the bow edge slopes,
   // so the strake's top edge stops short of it).
-  ctx.fillStyle = 'rgba(20,30,34,0.28)';
+  // V24: the strake (0.28) and deck edge (0.22) were still below the
+  // eye against the saturated hull — at 2× the boat read as one flat
+  // orange tone (V24 audit problem 11). Stronger: 0.45 / 0.35.
+  ctx.fillStyle = 'rgba(20,30,34,0.45)';
   ctx.beginPath();
   ctx.moveTo(p.x - bowSign * w * 0.34, p.y + h * 0.5);
   ctx.lineTo(p.x + bowSign * w * 0.30, p.y + h * 0.5);
@@ -3190,7 +3334,7 @@ function drawBoat(ctx, v, b, t) {
   ctx.lineTo(p.x - bowSign * w * 0.32, p.y + h * 0.28);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,240,220,0.22)';
+  ctx.fillStyle = 'rgba(255,240,220,0.35)';
   ctx.beginPath();
   ctx.moveTo(p.x - bowSign * w * 0.5, p.y - h * 0.5);
   ctx.lineTo(p.x + bowSign * w * 0.42, p.y - h * 0.5);
@@ -3211,16 +3355,23 @@ function drawBoat(ctx, v, b, t) {
   ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, h * 0.75);
   // V23: the cabin was a plain white box — a roof line and a shaded
   // side face, so it reads as a cabin with a top, not a block.
+  // V24: the cabin's roof line (h×0.12) and side face (0.18) did not
+  // read at 2× (V24 audit problem 11). Thicker roof (h×0.20), darker
+  // side (0.30).
   ctx.fillStyle = 'rgba(20,30,34,0.35)';
-  ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, Math.max(1, h * 0.12));
-  ctx.fillStyle = 'rgba(20,30,34,0.18)';
+  ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, Math.max(1, h * 0.20));
+  ctx.fillStyle = 'rgba(20,30,34,0.30)';
   ctx.fillRect(p.x - bowSign * w * 0.05 + w * 0.10, p.y - h * 1.25, w * 0.08, h * 0.75);
   ctx.fillStyle = '#22333a';
   ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.1, p.y - h * 1.12, w * 0.22, h * 0.3);
   if (b.rescue) {
     // Flare: a rising orange star and its smoke, impossible to miss at dusk.
     const flicker = 0.75 + 0.25 * Math.sin(t * 11);
-    const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, w * 0.9);
+    // V24: the glow's radius (w×0.9) dwarfed its own flare star
+    // (~3.5 px) and read as a second sunset pillar washing through
+    // the boat (V24 audit problem 12). Smaller glow (w×0.55),
+    // bigger star (p.s×0.55) — the source reads, the warmth stays.
+    const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, w * 0.55);
     glow.addColorStop(0, `rgba(255,120,40,${0.85 * flicker})`);
     glow.addColorStop(1, 'rgba(255,120,40,0)');
     ctx.fillStyle = glow;
@@ -3228,11 +3379,14 @@ function drawBoat(ctx, v, b, t) {
     // rect (p.y − h×3.6, h×2 tall) cut the circle's top off, because
     // 0.9w > h, so the glow appeared suddenly across a straight
     // horizontal edge and read as an orange slab (V23 audit problem 7).
-    // A square of side 2w centred on the gradient's centre holds it.
-    ctx.fillRect(p.x - w, p.y - h * 2.6 - w, w * 2, w * 2);
+    // A square of side 1.1w centred on the gradient's centre holds
+    // it (V24: the radius shrank to w×0.55, so the square shrinks
+    // with it — a 2w square would still contain it, but the rect is
+    // the glow's own bounds now).
+    ctx.fillRect(p.x - w * 0.55, p.y - h * 2.6 - w * 0.55, w * 1.1, w * 1.1);
     ctx.fillStyle = '#ffb35c';
     ctx.beginPath();
-    ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.3), 0, Math.PI * 2);
+    ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.55), 0, Math.PI * 2);
     ctx.fill();
     // Smoke: a wisp, not coins — the flat-core softPuffs read as
     // stacked dark discs above the flare (V22 audit problem 4; V21's

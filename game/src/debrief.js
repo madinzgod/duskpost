@@ -204,20 +204,33 @@ export function drawRouteMap(ctx, world, game, plane, t) {
       ctx.stroke();
     }
   });
-  // The boat's label, on a pill, below its dot — after the route, so the
-  // route line never crosses the text.
+  // V24: the pill below the dot sat astride the rising KELAPA→BATU
+  // route segment and cut it in two (V24 audit problem 3, measured:
+  // the route passes y 294–299 at x 400–440, straight through the
+  // pill). The label moves up-left of the dot, into the empty sea —
+  // clear of the route (y 294–319 at x 300–420), the BATU label
+  // (x 460–540) and the STORM CELL label (x 480–570, y 275–290) —
+  // with a hairline leader back to its dot.
   {
     const bx = mx(boat.z);
-    const by = my(boat.x) + 30;
+    const by = my(boat.x);
+    const lx = bx - 105;
+    const ly = by - 32;
     ctx.font = '600 15px system-ui, sans-serif';
     const bw = ctx.measureText('RESCUE BOAT').width;
+    ctx.strokeStyle = 'rgba(255,233,201,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(lx + bw / 2 + 7, ly - 4);
+    ctx.lineTo(bx - 10, by - 4);
+    ctx.stroke();
     ctx.fillStyle = 'rgba(10,14,22,0.45)';
     ctx.beginPath();
-    ctx.roundRect(bx - bw / 2 - 7, by - 15, bw + 14, 21, 6);
+    ctx.roundRect(lx - bw / 2 - 7, ly - 15, bw + 14, 21, 6);
     ctx.fill();
     ctx.fillStyle = '#ffe9c9';
     ctx.textAlign = 'center';
-    ctx.fillText('RESCUE BOAT', bx, by);
+    ctx.fillText('RESCUE BOAT', lx, ly);
   }
 
   // Compass + scale bar.
