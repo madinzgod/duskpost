@@ -329,13 +329,24 @@ function drawSea(ctx, v, plane, light) {
   // Same frame-biased sampling, smaller 4×2 px dashes at alpha
   // 0.10–0.25; the existing 160-dash field is untouched, so V14's
   // near density is not thinned.
-  for (let i = 0; i < 60; i += 1) {
+  // V26: the horizon band is bare, not dotty — the approach's y380–400
+  // holds 14 px >med+12 in 9,600 (V26 audit problem 3). The dashes
+  // ARE drawn there (~11 in the full-width band at the approach
+  // camera) but at fillStyle 0.35 × globalAlpha 0.10–0.25 =
+  // 0.035–0.09 effective — below the eye and the metric. The V16
+  // lesson, unapplied here: this pass sets its own fillStyle
+  // (alpha 1.0) so the globalAlpha below is the dash's real alpha.
+  // Count 60 → 120 and window 84 → 60, so more dashes land inside
+  // the gate at high cameras (the cover camera keeps ~21 in its
+  // py 354–365 strip instead of ~8).
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 120; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 9.4) * 43758.5453;
       return h - Math.floor(h);
     };
     const px = 4 + hash(1) * 1272;
-    const py = v.horizon + 6 + hash(2) * 84;
+    const py = v.horizon + 6 + hash(2) * 60;
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
     if (fwd < 600 || fwd > 2600) continue;
@@ -345,7 +356,12 @@ function drawSea(ctx, v, plane, light) {
     const p = project(v, wx, 0, wz);
     if (!p) continue;
     const len = clamp(p.s * 0.35, 4, 12);
-    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.25);
+    // V26 rev: the first render's dashes land (+213 px changed in the
+    // approach y380–400 band) but at +7–11 levels — below the +12
+    // metric and below the eye against the bright mauve horizon sea
+    // (~128). The alpha floor lifts 0.10 → 0.18 and the cap 0.25 →
+    // 0.35, so the far dashes read as light on the horizon water.
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.35);
     ctx.fillRect(p.x - len / 2, p.y, len, 2);
   }
   // V16: a mid-band pass for the sea neither loop reaches — the
@@ -453,6 +469,37 @@ function drawSea(ctx, v, plane, light) {
       return h - Math.floor(h);
     };
     const px = 4 + hash(1) * hash(1) * 446;
+    const py = v.horizon + 70 + hash(2) * 40;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 750) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V26: a centre pass for the cover's sea under the ring — 142 px
+  // >med+12 of 8,000 (1.8%), the thinnest sea box in the frame
+  // against 456–612 elsewhere (V26 audit problem 10). No pass
+  // targets the centre strip at that row: the near-water pass
+  // spreads 180 samples over the whole frame and the V25 mirror
+  // covers px 0–450 only. Same window and gate as pass A, own salt,
+  // on the strip the other two passes straddle. At the approach
+  // camera it lands on the mid sea (fwd 465–724, inside the gate);
+  // at the storm camera the window maps to fwd 1110–1740, so the
+  // gate rejects it there.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 40; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 63.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 450 + hash(1) * 350;
     const py = v.horizon + 70 + hash(2) * 40;
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
@@ -1821,11 +1868,13 @@ function drawStorm(ctx, v, storm, t) {
         (nodes[i - 1][1] + ny * 2 + nodes[i + 1][1]) / 4,
       ];
     });
-    // V25: the head still carries a broad bright halo — the profile
+    // V26: the head still carries a broad bright halo — the profile
     // through the head falls only 159 → 113 out to ±90 px (V25 audit
-    // problem 10). The first segment's blobs sit on the fire, so
-    // their light pools at the head instead of following the strike:
-    // the first segment's blobs draw at 0.6×, the rest full.
+    // problem 10, still open in V26 audit problem 5). Narrow, don't
+    // dim: the wide blobs R×0.13 → R×0.10 (and the inner R×0.09 →
+    // R×0.075), so the light hugs the channel instead of pooling at
+    // the head; the alphas and the fire stay, protecting the
+    // flash-field sd (40.37, guard ≥39.5).
     for (let i = 1; i < smoothNodes.length; i += 1) {
       const headDim = i === 1 ? 0.6 : 1;
       for (const tt of [0.33, 0.66]) {
@@ -1840,8 +1889,8 @@ function drawStorm(ctx, v, storm, t) {
         // it burned at 0.30, so the light read as an orb detached from
         // the channel (V24 audit problem 9). Lifted to 0.10/0.13 so
         // the light continues down the strike.
-        softPuff(ctx, px, py, R * 0.13, `rgba(255,244,200,${0.10 * headDim * flash})`, 'rgba(255,244,200,0)');
-        softPuff(ctx, px, py, R * 0.09, `rgba(255,250,220,${0.13 * headDim * flash})`, 'rgba(255,250,220,0)');
+        softPuff(ctx, px, py, R * 0.10, `rgba(255,244,200,${0.10 * headDim * flash})`, 'rgba(255,244,200,0)');
+        softPuff(ctx, px, py, R * 0.075, `rgba(255,250,220,${0.13 * headDim * flash})`, 'rgba(255,250,220,0)');
       }
     }
     // V17: the mid pass was 0.07R wide at 0.13 alpha — a 61 px
@@ -3233,6 +3282,28 @@ function drawPalm(ctx, v, x, y, z, s) {
     ctx.beginPath();
     ctx.ellipse(tx - (ph(9, 46) - 0.5) * h * 0.3, ty + h * 0.10, h * 0.11, h * 0.08, 0, 0, Math.PI * 2);
     ctx.fill();
+    // V26: the lit cap is two smooth overlapping ellipses of one pale
+    // tone, and the fronds draw before the crown body, so no frond
+    // ever crosses the crown's face — the delivery palms' crowns read
+    // as smooth pale domes at 2× (V26 audit problem 9, dome-lower sd
+    // 6.30). Two short dark frond arcs over the face, hashed per palm,
+    // break the dome the way real fronds cross a palm's face. Thin
+    // and dark, so they read as foliage, not cracks. Non-tiny palms
+    // only — the tiny/sky crowns carry no cap to break.
+    if (!tiny) {
+      ctx.strokeStyle = '#1e4229';
+      ctx.lineWidth = Math.max(1.5, base.s * 0.12);
+      for (let k = 0; k < 2; k += 1) {
+        const fx0 = tx + (ph(20 + k, 61) - 0.5) * h * 0.36;
+        const fy0 = ty - h * (0.16 + ph(20 + k, 62) * 0.06);
+        const fx1 = fx0 + h * (0.14 + ph(20 + k, 63) * 0.10);
+        const fy1 = fy0 + h * (0.16 + ph(20 + k, 64) * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(fx0, fy0);
+        ctx.quadraticCurveTo(fx0 + h * 0.08, fy0 + h * 0.02, fx1, fy1);
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   }
   // (Fronds now draw before the crown body — see the V16 note above.)
@@ -3389,10 +3460,16 @@ function drawBoat(ctx, v, b, t) {
   // not model a boat. A continuous vertical shading gradient over the
   // hull's own path: a sun side at the top, a water side at the bottom.
   // The strake, deck edge and waterline below still draw on top.
+  // V26: the hull was still one orange tone between the strake and
+  // the deck edge at 2× (V26 audit problem 7) — the gradient's fall
+  // (119 → 91 down the hull) is too gentle to model the boat. A
+  // steeper shade: a brighter sun side at the top, a darker water
+  // side at the bottom. The strake, deck edge and waterline below
+  // still draw on top.
   const hullShade = ctx.createLinearGradient(0, p.y - h * 0.5, 0, p.y + h * 0.5);
-  hullShade.addColorStop(0, 'rgba(255,240,220,0.25)');
+  hullShade.addColorStop(0, 'rgba(255,240,220,0.30)');
   hullShade.addColorStop(0.45, 'rgba(255,240,220,0)');
-  hullShade.addColorStop(1, 'rgba(20,30,34,0.35)');
+  hullShade.addColorStop(1, 'rgba(20,30,34,0.50)');
   ctx.fillStyle = hullShade;
   ctx.fill();
   // V23: the hull was one flat tone — a paper cutout at 2× (V23 audit
@@ -3438,7 +3515,10 @@ function drawBoat(ctx, v, b, t) {
   // side (0.30).
   ctx.fillStyle = 'rgba(20,30,34,0.35)';
   ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, Math.max(1, h * 0.20));
-  ctx.fillStyle = 'rgba(20,30,34,0.30)';
+  // V26: the cabin's shaded side face (0.30) is below the eye at 2×
+  // (V26 audit problem 7) — the cabin reads as a white box with a
+  // dark slit. Darker (0.38), same geometry.
+  ctx.fillStyle = 'rgba(20,30,34,0.38)';
   ctx.fillRect(p.x - bowSign * w * 0.05 + w * 0.10, p.y - h * 1.25, w * 0.08, h * 0.75);
   ctx.fillStyle = '#22333a';
   ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.1, p.y - h * 1.12, w * 0.22, h * 0.3);
