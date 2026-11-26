@@ -1,7 +1,7 @@
 // The archipelago: a seeded chain of dusk islands along a 6 km mail course — which island sits
 // where, which of them carry a landing strip, where the flight rings hang, where the boats
-// drift, and the two questions the physics asks every step: how high is the ground here, and
-// am I over a strip?
+// drift, where the evening's storm cell stands, and the questions the physics asks every
+// step: how high is the ground here, am I over a strip, and how rough is the air?
 import { rngTools } from './random.js';
 
 export const COURSE_LENGTH = 6400;
@@ -81,8 +81,30 @@ export function createWorld(seed) {
       x: rng.range(-900, 900),
       y: rng.range(120, 230),
       z: rng.range(200, COURSE_LENGTH),
-      s: rng.range(60, 170),
+      s: rng.range(80, 210),
     });
+  }
+  // The hero bank: three very large cloud masses standing in depth behind
+  // Cahaya, so the cover's sky has weather at the island's own scale and not
+  // just a gradient — they are ordinary clouds, only bigger and placed.
+  clouds.push(
+    { x: 430, y: 165, z: 3380, s: 640 },
+    { x: -60, y: 195, z: 3680, s: 780 },
+    { x: 760, y: 140, z: 3150, s: 520 },
+  );
+
+  // The storm cell: one seeded cumulonimbus standing off the course's west
+  // side at Cahaya's latitude, big enough to see from two islands away. The
+  // course itself only skirts its eastern edge — the rough air is a place,
+  // not a dice roll, and the decision it asks is simple: keep east.
+  const storm = { x: -560, z: 3050, r: 300, top: 300, base: 80 };
+
+  /** Turbulence 0..1 at a point: full inside the cell's radius, falling off
+   *  across 420 m of rough shoulder to the east and every other side. */
+  function stormAt(x, z) {
+    const d = Math.hypot(x - storm.x, z - storm.z);
+    const turb = d <= storm.r ? 1 : Math.max(0, 1 - (d - storm.r) / 420);
+    return { turb, dist: d };
   }
 
   // The evening wind: one seeded flow for the whole run, biased along the course (a
@@ -135,7 +157,7 @@ export function createWorld(seed) {
     return null;
   }
 
-  return { islands, rings, boats, rescueBoat, clouds, heightAt, stripAt, seed, wind, windAt };
+  return { islands, rings, boats, rescueBoat, clouds, storm, stormAt, heightAt, stripAt, seed, wind, windAt };
 }
 
 /** The home harbour island the run starts from. */

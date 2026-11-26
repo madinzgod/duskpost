@@ -9,7 +9,11 @@ view up a dusk archipelago of eight named islands: take off from the harbour wat
 the glowing rings, land on island strips to deliver the post and refuel, and set down
 beside a flaring boat when the rescue call comes — all before the light meter drains and
 the run ends with the sun. Throttle and turn discipline matter: fuel burns, a hard arrival
-costs hull, and smoke trails a hurt aeroplane home.
+costs hull, and smoke trails a hurt aeroplane home. The evening has weather to fly against:
+a seeded wind that drifts her aloft and streams every strip's windsock, a 240 kg mail bag
+that costs climb until it is delivered — and a storm cell standing off the course's west
+side, its lightning and rain shaft visible from two islands away, its rough air announced
+on the warning line. The route east of it is clear. Through it is shorter.
 
 The whole game is hand-rolled canvas 2D pseudo-3D (layered sea and islands, scaling
 sprites, one projection) with synthesized WebAudio sound — no engine, no assets, no

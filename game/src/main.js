@@ -68,7 +68,7 @@ if (shotName) {
   plane = staged.plane;
   missions = staged.missions;
   game = staged.game;
-  const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4 }[shotName] ?? 1;
+  const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4, storm: 2.93 }[shotName] ?? 1;
   game.time = frozenT;
   render(frozenT);
   window.__shotReady = true;
@@ -201,9 +201,15 @@ function stepFx(dt) {
 
 function render(t) {
   const shaking = t < game.shakeUntil;
-  const shake = shaking
-    ? { x: Math.sin(t * 91) * 7, y: Math.cos(t * 83) * 5 }
+  // Storm turbulence shakes the camera the way it shakes the plane: the
+  // cell's shoulder is felt in the frame before the cloud fills it.
+  const turbShake = plane.turb > 0.2
+    ? { x: Math.sin(t * 43) * 6 * plane.turb, y: Math.cos(t * 37) * 5 * plane.turb }
     : { x: 0, y: 0 };
+  const shake = {
+    x: (shaking ? Math.sin(t * 91) * 7 : 0) + turbShake.x,
+    y: (shaking ? Math.cos(t * 83) * 5 : 0) + turbShake.y,
+  };
   const view = makeView(plane, shake);
   drawScene(ctx, view, world, plane, fx, game, t);
   if (game.screen === 'play' || shotName) {
@@ -227,7 +233,10 @@ function drawBeacon(ctx, view, t) {
   grad.addColorStop(0, 'rgba(255,196,107,0)');
   grad.addColorStop(1, `rgba(255,196,107,${0.4 * pulse})`);
   ctx.fillStyle = grad;
-  const wdt = clamp(base.s * 1.1, 3, 26);
+  // The pillar is a real thing in the world — about 6 m of light — so its
+  // width comes from the projection like everything else: a fixed ~3 px at
+  // every range made it invisible and left the name label floating alone.
+  const wdt = clamp(base.s * 6, 2, 30);
   ctx.fillRect(base.x - wdt / 2, base.y - 320, wdt, 320);
   ctx.strokeStyle = `rgba(255,196,107,${0.75 * pulse})`;
   ctx.lineWidth = 2;

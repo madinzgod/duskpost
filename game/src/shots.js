@@ -3,12 +3,12 @@
 // state the physics holds in play), advances the mission rotation through the real
 // mission machinery where a scene needs it, and lets the normal renderer draw the frame —
 // so a screenshot is the game itself, never a mock-up. Scenes: cover, approach, delivery,
-// title.
+// title, storm.
 import { createWorld } from './archipelago.js';
 import { createPlane } from './flight-physics.js';
 import { createMissions } from './missions.js';
 
-export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title'];
+export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title', 'storm'];
 
 export function stageShot(name, seed) {
   const world = createWorld(seed);
@@ -41,9 +41,53 @@ export function stageShot(name, seed) {
     plane.onWater = false;
     plane.fuel = 62;
     plane.cargoKg = 240; // the Kelapa mail is aboard on this final
+    // The seeded slalom leaves this run's next ring sitting on the sun's
+    // disc (the sun hangs at a fixed 0.335 across the frame); re-hang it
+    // in the flight path to the right, the same staging the cover uses,
+    // so the ring reads as a target and not as the sun's halo.
+    for (const r of world.rings) if (r.z < plane.z) r.passed = true;
+    const nextRing = world.rings.find((r) => !r.passed && r.z > plane.z);
+    if (nextRing) {
+      nextRing.x = plane.x + 55;
+      nextRing.y = isl.h + 52;
+      nextRing.z = plane.z + 205;
+    }
     game.score = 475;
     game.lightFrac = 0.55;
     game.light = 132;
+  } else if (name === 'storm') {
+    // In the storm cell's rough air with Cahaya's mail aboard: close enough
+    // that the turbulence is real (stormAt ≈ 0.8 here, so the warning reads
+    // ROUGH AIR) and the whole cell — column, anvil, rain shaft, lightning —
+    // stands in the left of the frame, while the next ring hangs in the
+    // clear air east of it: the routing decision in one frame.
+    const isl = world.islands[3]; // CAHAYA, the mail's destination
+    plane.x = -470;
+    plane.z = 2680;
+    plane.y = 95;
+    plane.hdg = 0.05;
+    plane.speed = 38;
+    plane.throttle = 0.66;
+    plane.vy = 0.4;
+    plane.bank = -0.16;
+    plane.airborne = true;
+    plane.onWater = false;
+    plane.fuel = 71;
+    plane.cargoKg = 240;
+    for (const r of world.rings) if (r.z < plane.z) r.passed = true;
+    const ring = world.rings.find((r) => !r.passed && r.z > plane.z);
+    if (ring) {
+      ring.x = plane.x + 210;
+      ring.y = 90;
+      ring.z = plane.z + 380;
+    }
+    missions.current.island = isl;
+    missions.current.targetX = isl.x;
+    missions.current.targetZ = isl.z;
+    missions.current.detail = `Deliver the post to ${isl.name}`;
+    game.score = 905;
+    game.lightFrac = 0.62;
+    game.light = 149;
   } else if (name === 'delivery') {
     // Just touched down on the Kelapa strip: run the real landing event through the
     // mission machinery so the card honestly shows the next job, then raise the banner.
@@ -99,12 +143,15 @@ export function stageShot(name, seed) {
     plane.fuel = 78;
     plane.cargoKg = 240; // Cahaya's mail is in the back
     // Rings south of here are already threaded on this run; the next one hangs
-    // right in the flight path, big in the frame.
+    // right in the flight path, big in the frame. It hangs at the plane's own
+    // altitude and a touch closer than V2 staged it: at y 80 its lower arc
+    // crossed Cahaya's north shore, where at the flight altitude it floats
+    // clean over the water, dead ahead — the hoop she is about to thread.
     for (const r of world.rings) if (r.z < plane.z) r.passed = true;
     const ring = world.rings.find((r) => !r.passed && r.z > plane.z) || world.rings[3];
-    ring.x = plane.x + 16;
-    ring.y = 80;
-    ring.z = plane.z + 175;
+    ring.x = plane.x + 12;
+    ring.y = 88;
+    ring.z = plane.z + 165;
     // The card shows this island's run: describe the current mission as Cahaya's.
     missions.current.island = isl;
     missions.current.targetX = isl.x;

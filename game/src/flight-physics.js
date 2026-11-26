@@ -18,6 +18,7 @@ export function createPlane() {
     onStrip: null, // island object while parked/rolling on a strip
     propPhase: 0,
     spray: 0, // 0..1 how much water the floats are throwing
+    turb: 0, // 0..1 storm turbulence where she sits — set by the step, read by camera + HUD
   };
 }
 
@@ -60,6 +61,24 @@ export function stepPlane(p, input, world, dt) {
     const aloft = clamp((p.y - 4) / 46, 0, 1);
     p.x += Math.sin(w.dir) * w.speed * aloft * dt;
     p.z += Math.cos(w.dir) * w.speed * aloft * dt;
+  }
+
+  // The storm cell's rough air: near the cell the evening stops being a flow
+  // and becomes a fist — gusts kick the climb, roll her without being asked,
+  // and shove her sideways, all scaled by how deep in the cell's shoulder she
+  // is. The wobble is a function of where she is, so the same patch of air
+  // kicks the same way every pass: weather with an address, flown around —
+  // or through, at a price. On the water and on the strip she is under it.
+  p.turb = 0;
+  if (p.airborne && world.stormAt) {
+    const st = world.stormAt(p.x, p.z);
+    p.turb = st.turb;
+    if (st.turb > 0.02) {
+      const tb = st.turb;
+      p.vy += Math.sin(p.z * 0.13 + p.x * 0.045) * tb * 11 * dt;
+      p.bank += Math.sin(p.z * 0.061 + 1.7) * tb * 0.7 * dt;
+      p.x += Math.sin(p.z * 0.083 + 0.6) * tb * 7 * dt;
+    }
   }
   p.x = clamp(p.x, -1400, 1400);
   if (p.z > 6600) p.z = 6600;
