@@ -70,6 +70,7 @@ if (shotName) {
   game = staged.game;
   const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4, storm: 2.93 }[shotName] ?? 1;
   game.time = frozenT;
+  world.setTime(frozenT); // the squall stands where the frozen clock puts it
   render(frozenT);
   window.__shotReady = true;
 } else {
@@ -118,6 +119,7 @@ function loop(ts) {
     }
     game.light = Math.max(0, game.light - dt);
     game.lightFrac = game.light / RUN_SECONDS;
+    world.setTime(t); // the squall drifts on the run's clock
     stepFx(dt);
     sound.update(plane.throttle, plane.speed);
     if (game.light <= 0 || plane.hull <= 0) {
@@ -229,7 +231,13 @@ function drawBeacon(ctx, view, t) {
   const base = project(view, tgt.x, 0, tgt.z);
   if (!base) return;
   const pulse = 0.55 + 0.3 * Math.sin(t * 3.1);
-  const grad = ctx.createLinearGradient(0, base.y - 320, 0, base.y);
+  // The pillar's height scales with the target's own projected scale, the
+  // way its width does: a fixed 320 screen px at every range left a far
+  // island's name hanging at cloud height, hundreds of pixels above a
+  // silhouette a few dozen tall, attached to nothing the eye could
+  // follow. Near targets keep a tall pillar; far names hug their islands.
+  const pillarH = clamp(base.s * 34, 40, 200);
+  const grad = ctx.createLinearGradient(0, base.y - pillarH, 0, base.y);
   grad.addColorStop(0, 'rgba(255,196,107,0)');
   grad.addColorStop(1, `rgba(255,196,107,${0.4 * pulse})`);
   ctx.fillStyle = grad;
@@ -237,7 +245,7 @@ function drawBeacon(ctx, view, t) {
   // width comes from the projection like everything else: a fixed ~3 px at
   // every range made it invisible and left the name label floating alone.
   const wdt = clamp(base.s * 6, 2, 30);
-  ctx.fillRect(base.x - wdt / 2, base.y - 320, wdt, 320);
+  ctx.fillRect(base.x - wdt / 2, base.y - pillarH, wdt, pillarH);
   ctx.strokeStyle = `rgba(255,196,107,${0.75 * pulse})`;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -248,7 +256,7 @@ function drawBeacon(ctx, view, t) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffe9c9';
     const label = m.kind === 'rings' ? 'NEXT RING' : m.kind === 'rescue' ? 'RESCUE — FLARE' : m.island ? m.island.name : '';
-    if (label) ctx.fillText(label, base.x, base.y - 330);
+    if (label) ctx.fillText(label, base.x, base.y - pillarH - 10);
   }
 }
 

@@ -99,12 +99,54 @@ export function createWorld(seed) {
   // not a dice roll, and the decision it asks is simple: keep east.
   const storm = { x: -560, z: 3050, r: 300, top: 300, base: 80 };
 
-  /** Turbulence 0..1 at a point: full inside the cell's radius, falling off
-   *  across 420 m of rough shoulder to the east and every other side. */
+  // The squall line: a second, different weather — not another tower but a
+  // band of rough air lying across the course's last leg, between Mutiara
+  // and Pelangi, drifting slowly east–west on the run's clock. Where the
+  // cell asks "keep east", the line asks "cross now, cross at the thin
+  // end, or wait for the drift" — and it charges less for the crossing
+  // (peak 0.85): a toll, not a wall. Without it the whole second half of
+  // the course, Tanjung to Pelangi, is empty sky.
+  const squall = {
+    baseX: 90, z: 4920, halfLen: 560, halfWid: 215, top: 165, base: 55,
+    driftAmp: 150, driftPeriod: 150, peak: 0.85,
+  };
+
+  // The run's clock, set by the loop (and frozen by the screenshot
+  // scenes): the squall's drift is a function of it, so the same moment
+  // always finds the line in the same place.
+  let runTime = 0;
+  function setTime(t) {
+    runTime = t;
+  }
+
+  /** The squall as it stands on the run's clock right now — what the
+   *  renderer draws and the physics flies through. */
+  function squallNow() {
+    return {
+      ...squall,
+      x: squall.baseX + Math.sin((runTime / squall.driftPeriod) * Math.PI * 2) * squall.driftAmp,
+    };
+  }
+
+  /** Turbulence 0..1 at a point, and which weather makes it (`kind`:
+   *  'cell', 'squall', or null in clear air). The cell: full inside its
+   *  radius, falling off across 420 m of rough shoulder. The squall: an
+   *  elongated elliptical field across the course, full in its core,
+   *  falling off across its own shoulder, peaking lower than the cell. */
   function stormAt(x, z) {
     const d = Math.hypot(x - storm.x, z - storm.z);
-    const turb = d <= storm.r ? 1 : Math.max(0, 1 - (d - storm.r) / 420);
-    return { turb, dist: d };
+    let turb = d <= storm.r ? 1 : Math.max(0, 1 - (d - storm.r) / 420);
+    let kind = turb > 0 ? 'cell' : null;
+    const sq = squallNow();
+    const ex = (x - sq.x) / (squall.halfLen + 260);
+    const ez = (z - squall.z) / (squall.halfWid + 260);
+    const q = Math.sqrt(ex * ex + ez * ez);
+    const sqTurb = q >= 1 ? 0 : squall.peak * (q < 0.55 ? 1 : 1 - (q - 0.55) / 0.45);
+    if (sqTurb > turb) {
+      turb = sqTurb;
+      kind = 'squall';
+    }
+    return { turb, dist: d, kind };
   }
 
   // The evening wind: one seeded flow for the whole run, biased along the course (a
@@ -157,7 +199,7 @@ export function createWorld(seed) {
     return null;
   }
 
-  return { islands, rings, boats, rescueBoat, clouds, storm, stormAt, heightAt, stripAt, seed, wind, windAt };
+  return { islands, rings, boats, rescueBoat, clouds, storm, squall, squallNow, setTime, stormAt, heightAt, stripAt, seed, wind, windAt };
 }
 
 /** The home harbour island the run starts from. */

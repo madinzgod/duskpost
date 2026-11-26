@@ -166,6 +166,10 @@ function drawWorldObjects(ctx, v, world, plane, fx, t, light) {
   const items = [];
   for (const c of world.clouds) items.push({ kind: 'cloud', o: c, z: c.z });
   if (world.storm) items.push({ kind: 'storm', o: world.storm, z: world.storm.z });
+  if (world.squallNow) {
+    const sq = world.squallNow();
+    items.push({ kind: 'squall', o: sq, z: sq.z });
+  }
   for (const isl of world.islands) items.push({ kind: 'island', o: isl, z: isl.z });
   for (const b of world.boats) items.push({ kind: 'boat', o: b, z: b.z });
   for (const r of world.rings) if (!r.passed) items.push({ kind: 'ring', o: r, z: r.z });
@@ -175,10 +179,127 @@ function drawWorldObjects(ctx, v, world, plane, fx, t, light) {
   for (const item of items) {
     if (item.kind === 'cloud') drawCloud(ctx, v, item.o);
     else if (item.kind === 'storm') drawStorm(ctx, v, item.o, t);
+    else if (item.kind === 'squall') drawSquall(ctx, v, item.o, t);
     else if (item.kind === 'island') drawIsland(ctx, v, item.o, t, light, world);
     else if (item.kind === 'boat') drawBoat(ctx, v, item.o, t);
     else drawRing(ctx, v, item.o, item.o === nextRing, t);
   }
+}
+
+/** One soft cloud puff: a radial-gradient disc squashed to cloud proportions,
+ *  its colour solid through the middle and gone at the rim — no hard edge
+ *  anywhere. Overlapping flat fills show their rims where they cross, which
+ *  is what turned the storm's belly into a stack of soap discs; gradient
+ *  puffs melt into each other the way cloud does. `inner` and `outer` are
+ *  the same hue at full and zero alpha. */
+function softPuff(ctx, cx, cy, r, inner, outer) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, 0.72);
+  const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+  g.addColorStop(0, inner);
+  g.addColorStop(0.62, inner);
+  g.addColorStop(1, outer);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** The squall line: a band of weather lying across the course — a long, low
+ *  bank of soft puffs stretched wide and flattened where the cell stacks
+ *  them into a tower, a rain curtain hanging out of it, the sea shadowed
+ *  beneath. It reads as a line to cross or time, not a wall to avoid, and
+ *  its lightning only mutters inside the bank. Drawn with the storm's own
+ *  machinery, at the squall's drifted position on the run's clock. */
+function drawSquall(ctx, v, sq, t) {
+  const base = project(v, sq.x, 0, sq.z);
+  const topP = project(v, sq.x, sq.top, sq.z);
+  if (!base || !topP) return;
+  const s = base.s;
+  const halfW = sq.halfLen * s;
+  if (halfW < 24) return;
+  const seaY = base.y;
+  const baseP = project(v, sq.x, sq.base, sq.z);
+  const baseY = baseP ? baseP.y : seaY - sq.base * s;
+  const topY = topP.y;
+  const bodySpan = baseY - topY;
+
+  ctx.save();
+  // The whole line fades in with range: at three kilometres it is a
+  // rumour on the horizon, not a smear stamped across it.
+  ctx.globalAlpha = clamp((s - 0.16) / 0.3, 0.3, 1);
+
+  // The sea under the line lies in shadow: a wide soft gradient, no rim.
+  ctx.save();
+  ctx.translate(base.x, seaY);
+  ctx.scale(1, 0.1);
+  const sh = ctx.createRadialGradient(0, 0, 4, 0, 0, halfW * 1.04);
+  sh.addColorStop(0, 'rgba(16,22,34,0.32)');
+  sh.addColorStop(0.7, 'rgba(16,22,34,0.18)');
+  sh.addColorStop(1, 'rgba(16,22,34,0)');
+  ctx.fillStyle = sh;
+  ctx.beginPath();
+  ctx.arc(0, 0, halfW * 1.04, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // The rain curtain: one wide soft wash with streaks running down it.
+  const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
+  grad.addColorStop(0, 'rgba(168,182,205,0.13)');
+  grad.addColorStop(1, 'rgba(168,182,205,0.03)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(base.x - halfW * 0.92, baseY);
+  ctx.lineTo(base.x + halfW * 0.92, baseY);
+  ctx.lineTo(base.x + halfW * 0.98, seaY);
+  ctx.lineTo(base.x - halfW * 0.98, seaY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(190,200,220,0.13)';
+  ctx.lineWidth = Math.max(1, s * 0.3);
+  const streaks = Math.max(5, Math.floor(halfW / 26));
+  for (let i = 0; i < streaks; i += 1) {
+    const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76;
+    const drift = ((t * 0.8 + i * 0.29) % 1) * 0.3;
+    ctx.beginPath();
+    ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * drift * 0.2);
+    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.55 + drift * 0.4));
+    ctx.stroke();
+  }
+
+  // The bank itself: a row of soft puffs along the front, bellies dark,
+  // a second pass lifting the tops — the cell's puff machinery laid out
+  // along a line instead of stacked into a column.
+  const puffs = [
+    [-0.86, 0.30, 0.16], [-0.62, 0.52, 0.20], [-0.38, 0.38, 0.17],
+    [-0.14, 0.62, 0.22], [0.10, 0.44, 0.18], [0.34, 0.66, 0.21],
+    [0.58, 0.40, 0.17], [0.82, 0.56, 0.19], [0.0, 0.30, 0.24],
+    [-0.48, 0.72, 0.16], [0.46, 0.82, 0.15], [0.02, 0.86, 0.18],
+  ];
+  for (const [fx, fy, fr] of puffs) {
+    softPuff(ctx, base.x + fx * halfW, baseY - bodySpan * fy, fr * halfW * 1.1, 'rgba(38,34,56,0.95)', 'rgba(38,34,56,0)');
+  }
+  for (const [fx, fy, fr] of puffs) {
+    if (fy < 0.5) continue;
+    softPuff(ctx, base.x + fx * halfW - halfW * 0.02, baseY - bodySpan * (fy + 0.05), fr * halfW * 0.66, 'rgba(96,84,120,0.5)', 'rgba(96,84,120,0)');
+  }
+
+  // Lightning, rarer and quieter than the cell's: a glow inside the bank
+  // every seven seconds and no bolt — the line mutters where the cell cracks.
+  const cycle = t % 7;
+  if (cycle < 0.12) {
+    const flash = 1 - cycle / 0.12;
+    const gx = base.x + halfW * 0.3;
+    const gy = baseY - bodySpan * 0.55;
+    const glow = ctx.createRadialGradient(gx, gy, 4, gx, gy, halfW * 0.4);
+    glow.addColorStop(0, `rgba(255,244,200,${0.5 * flash})`);
+    glow.addColorStop(1, 'rgba(255,244,200,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(gx - halfW * 0.4, gy - bodySpan * 0.5, halfW * 0.8, bodySpan);
+  }
+  ctx.restore();
 }
 
 /** The storm cell: a cumulonimbus standing on the sea — a dark column with a
@@ -198,17 +319,29 @@ function drawStorm(ctx, v, storm, t) {
   const baseY = baseP ? baseP.y : seaY - storm.base * s;
   const topY = topP.y;
 
-  // The sea under the cell lies in shadow, rain-darkened.
-  ctx.fillStyle = 'rgba(16,22,34,0.35)';
+  // The sea under the cell lies in shadow, rain-darkened: a radial
+  // gradient, darkest under the column and gone at its rim — a flat
+  // ellipse here drew a plate laid on the water, rim and all.
+  ctx.save();
+  ctx.translate(cx, seaY);
+  ctx.scale(1, 0.1);
+  const shadow = ctx.createRadialGradient(0, 0, 4, 0, 0, R * 1.05);
+  shadow.addColorStop(0, 'rgba(16,22,34,0.36)');
+  shadow.addColorStop(0.7, 'rgba(16,22,34,0.20)');
+  shadow.addColorStop(1, 'rgba(16,22,34,0)');
+  ctx.fillStyle = shadow;
   ctx.beginPath();
-  ctx.ellipse(cx, seaY, R * 1.05, R * 0.1, 0, 0, Math.PI * 2);
+  ctx.arc(0, 0, R * 1.05, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 
   // The rain shaft: a slanted curtain from the cloud base to the sea — the
   // visible reason the route keeps east. It is drawn as nested soft
-  // trapezoids (never one hard-edged wedge) with streaks running down it.
+  // trapezoids (never one hard-edged wedge) with streaks running down it;
+  // the two widest layers are the weakest, so the silhouette feathers
+  // into the air instead of ending on one straight diagonal line.
   const slant = R * 0.14;
-  for (const [shrink, a] of [[0, 0.05], [0.14, 0.07], [0.3, 0.09]]) {
+  for (const [shrink, a] of [[-0.22, 0.025], [-0.1, 0.04], [0, 0.05], [0.14, 0.07], [0.3, 0.09]]) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
     grad.addColorStop(0, `rgba(168,182,205,${a + 0.10})`);
     grad.addColorStop(1, `rgba(168,182,205,${a * 0.4})`);
@@ -234,11 +367,12 @@ function drawStorm(ctx, v, storm, t) {
 
   // The cloud body: a tower of overlapping puffs between the cloud base
   // and the top — a narrower column at the foot, a bulging middle, and
-  // the anvil spreading at the top. Puffs, not stacked ellipses: a few
-  // giant ellipses draw as concentric bands (worse when the centre is
-  // off-frame), where a scalloped puff silhouette reads as cloud at any
-  // range. Bellies near-black violet; a second, smaller pass lifts the
-  // tops; a faint dusk rim catches the sun side.
+  // the anvil spreading at the top. Every puff is a soft radial gradient
+  // (see softPuff): flat fills showed their rims where they crossed, and
+  // the belly read as a stack of soap discs at screenshot size. Bellies
+  // near-black violet; a second, smaller pass lifts the tops; a faint
+  // dusk rim catches the sun side. Radii run a touch large to make up
+  // for the soft rim.
   const bodySpan = baseY - topY;
   const puffs = [
     [-0.28, 0.05, 0.21], [0.08, 0.04, 0.24], [0.36, 0.07, 0.19],
@@ -251,25 +385,15 @@ function drawStorm(ctx, v, storm, t) {
     [-0.70, 0.84, 0.30], [-0.18, 0.85, 0.33], [0.34, 0.85, 0.32], [0.72, 0.83, 0.26],
     [-0.55, 0.93, 0.28], [0.0, 0.95, 0.32], [0.55, 0.93, 0.27],
   ];
-  for (const pass of [0, 1]) {
-    ctx.fillStyle = pass === 0 ? 'rgba(33,29,50,0.88)' : 'rgba(59,53,84,0.30)';
-    for (const [fx, fy, fr] of puffs) {
-      const rr = fr * R * (pass === 0 ? 1 : 0.72);
-      ctx.beginPath();
-      ctx.ellipse(
-        cx + fx * R - (pass === 0 ? 0 : R * 0.03),
-        baseY - bodySpan * fy - (pass === 0 ? 0 : bodySpan * 0.035),
-        rr, rr * 0.72, 0, 0, Math.PI * 2,
-      );
-      ctx.fill();
-    }
+  for (const [fx, fy, fr] of puffs) {
+    softPuff(ctx, cx + fx * R, baseY - bodySpan * fy, fr * R * 1.12, 'rgba(33,29,50,0.88)', 'rgba(33,29,50,0)');
   }
-  ctx.fillStyle = 'rgba(255,150,90,0.13)';
+  for (const [fx, fy, fr] of puffs) {
+    softPuff(ctx, cx + fx * R - R * 0.03, baseY - bodySpan * (fy + 0.035), fr * R * 0.8, 'rgba(59,53,84,0.30)', 'rgba(59,53,84,0)');
+  }
   for (const [fx, fy, fr] of puffs) {
     if (fy < 0.6) continue;
-    ctx.beginPath();
-    ctx.ellipse(cx + (fx - 0.1) * R, baseY - bodySpan * (fy + 0.03), fr * R * 0.6, fr * R * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    softPuff(ctx, cx + (fx - 0.1) * R, baseY - bodySpan * (fy + 0.03), fr * R * 0.66, 'rgba(255,150,90,0.13)', 'rgba(255,150,90,0)');
   }
 
   // Lightning: a few frames of fire inside the upper cloud, and a bolt
@@ -316,25 +440,48 @@ function drawCloud(ctx, v, c) {
   const spread = Math.min(0.62, 0.34 + Math.max(0, w - 150) / 550);
   const puffH = Math.min(0.34, 0.21 + Math.max(0, w - 150) / 800);
   const puffs = [[-0.52, 0.10, 0.52], [-0.26, -0.02, 0.68], [0.02, -0.10, 0.85], [0.32, -0.03, 0.66], [0.56, 0.10, 0.48], [0, 0.12, 0.9]];
+  // Per-puff jitter hashed from the cloud's own position, so it is the
+  // same every frame for a given cloud and different for every other:
+  // two flat passes of one fixed cluster at fixed offsets are what
+  // resolved into nested oval contours — a stamped lens — at screenshot
+  // size. Jittered offsets, radii, squash and alpha break the stamp;
+  // at judge size the bank reads exactly as before, a dark mass with a
+  // lit top.
+  const jit = (i, salt) => {
+    const h = Math.sin(c.x * 12.9898 + c.z * 0.371 + i * 7.77 + salt * 3.1) * 43758.5453;
+    return h - Math.floor(h);
+  };
   ctx.fillStyle = 'rgba(74,44,86,0.62)';
-  for (const [ox, oy, r] of puffs) {
+  puffs.forEach(([ox, oy, r], i) => {
     ctx.beginPath();
-    ctx.ellipse(p.x + ox * w, p.y + oy * w * spread, r * w * 0.55, r * w * puffH, 0, 0, Math.PI * 2);
+    ctx.ellipse(
+      p.x + (ox + (jit(i, 1) - 0.5) * 0.09) * w,
+      p.y + (oy + (jit(i, 2) - 0.5) * 0.07) * w * spread,
+      r * w * 0.55 * (0.86 + jit(i, 3) * 0.3),
+      r * w * puffH * (0.85 + jit(i, 4) * 0.3),
+      0, 0, Math.PI * 2,
+    );
     ctx.fill();
-  }
-  ctx.fillStyle = 'rgba(146,84,110,0.45)';
-  for (const [ox, oy, r] of puffs) {
+  });
+  puffs.forEach(([ox, oy, r], i) => {
+    ctx.fillStyle = `rgba(146,84,110,${0.36 + jit(i, 5) * 0.16})`;
     ctx.beginPath();
-    ctx.ellipse(p.x + ox * w, p.y + (oy - 0.045) * w * spread, r * w * 0.5, r * w * puffH * 0.76, 0, 0, Math.PI * 2);
+    ctx.ellipse(
+      p.x + (ox + (jit(i, 6) - 0.5) * 0.09) * w,
+      p.y + (oy - 0.045 + (jit(i, 7) - 0.5) * 0.06) * w * spread,
+      r * w * 0.5 * (0.86 + jit(i, 8) * 0.3),
+      r * w * puffH * 0.76 * (0.85 + jit(i, 9) * 0.3),
+      0, 0, Math.PI * 2,
+    );
     ctx.fill();
-  }
+  });
   // The lit top edge: an arc stroked along the cluster's top, never a filled
   // ellipse — a filled one draws a clean oval inside the cloud, an "eye"
   // that turns the bank into a lens at screenshot size.
   ctx.strokeStyle = `rgba(255,166,110,${big ? 0.30 : 0.42})`;
   ctx.lineWidth = Math.max(1.2, w * 0.028);
   ctx.beginPath();
-  ctx.ellipse(p.x - w * 0.05, p.y - w * 0.02, w * 0.46, w * spread * 0.30, 0, Math.PI * 1.08, Math.PI * 1.92);
+  ctx.ellipse(p.x - w * 0.05, p.y - w * 0.02, w * 0.46 * (0.92 + jit(0, 10) * 0.14), w * spread * 0.30 * (0.9 + jit(0, 11) * 0.18), 0, Math.PI * 1.08, Math.PI * 1.92);
   ctx.stroke();
 }
 
@@ -374,6 +521,31 @@ function drawIsland(ctx, v, isl, t, light, world) {
   ctx.globalAlpha = 0.85;
   ctx.fill();
   ctx.globalAlpha = 1;
+  // Ground patches: seeded clearings in varied land tones, clipped to the
+  // island's own outline and toned with the same haze and darkening as the
+  // land itself. Without them the near island is one flat gradient fill
+  // between the beach and the ridge — a billiard table with a strip on it;
+  // with them, close land has ground in it. The strip, huts and palms all
+  // draw after this, on top.
+  ctx.save();
+  islandPath(ctx, v, isl, 1.0, 0);
+  ctx.clip();
+  for (let i = 0; i < 6; i += 1) {
+    const a = i * 2.13 + isl.z * 0.013;
+    const rr = isl.r * (0.3 + 0.16 * (i % 3));
+    const pp = project(v, isl.x + Math.cos(a) * rr, isl.h * 0.55, isl.z + Math.sin(a) * rr * 0.8);
+    if (!pp) continue;
+    const rad = Math.max(6, pp.s * isl.r * 0.3);
+    const toneHex = i % 2 === 0 ? toneLand('#5d8a5e', '#2c4a34') : toneLand('#2e5a44', '#142a20');
+    const g = ctx.createRadialGradient(pp.x, pp.y, rad * 0.15, pp.x, pp.y, rad);
+    g.addColorStop(0, hexA(toneHex, 0.5));
+    g.addColorStop(1, hexA(toneHex, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(pp.x, pp.y, rad, rad * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
   // A tree-line of dark crowns along the ridge, so the top reads as wooded.
   // Past ~2.6 km the crowns would be 3 px scratches on the horizon, not
   // trees — the haze alone carries the island there.
@@ -572,17 +744,40 @@ function drawStrip(ctx, v, isl, t, world) {
     ctx.lineWidth = Math.max(1, corners[0].s * 0.05);
     ctx.stroke();
   }
-  // Centreline dashes and threshold bars.
+  // Centreline dashes and threshold bars, drawn through the clamped
+  // projection like the surface and edges: with plain project() every
+  // dash behind the lens is dropped, so the runway went blank at exactly
+  // the range where it should read loudest — parked on it in the
+  // delivery frame, one dash survived.
   ctx.fillStyle = '#ffe9c9';
   for (let d = -hl + 10; d < hl - 6; d += 16) {
-    const a = project(v, isl.x, y, isl.z + d);
-    const b = project(v, isl.x, y, isl.z + d + 7);
-    if (a && b) {
+    const a = projectClamped(v, isl.x, y, isl.z + d);
+    const b = projectClamped(v, isl.x, y, isl.z + d + 7);
+    ctx.beginPath();
+    ctx.moveTo(a.x - a.s * 0.03, a.y);
+    ctx.lineTo(a.x + a.s * 0.03, a.y);
+    ctx.lineTo(b.x + b.s * 0.03, b.y);
+    ctx.lineTo(b.x - b.s * 0.03, b.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Threshold bars: four piano keys across each end of the strip — the
+  // marking that makes a grey slab read as a runway from the air, and
+  // the cheapest strengthener of the cover's weakest checklist element.
+  for (const endSign of [-1, 1]) {
+    for (let k = 0; k < 4; k += 1) {
+      const bx = isl.x - hw * 0.66 + k * (hw * 0.44);
+      const d0 = endSign * (hl - 13);
+      const d1 = endSign * (hl - 4);
+      const a = projectClamped(v, bx, y, isl.z + d0);
+      const b = projectClamped(v, bx + hw * 0.3, y, isl.z + d0);
+      const c = projectClamped(v, bx + hw * 0.3, y, isl.z + d1);
+      const e = projectClamped(v, bx, y, isl.z + d1);
       ctx.beginPath();
-      ctx.moveTo(a.x - a.s * 0.03, a.y);
-      ctx.lineTo(a.x + a.s * 0.03, a.y);
-      ctx.lineTo(b.x + b.s * 0.03, b.y);
-      ctx.lineTo(b.x - b.s * 0.03, b.y);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(e.x, e.y);
       ctx.closePath();
       ctx.fill();
     }
@@ -697,18 +892,41 @@ function drawLighthouse(ctx, v, isl, t) {
 
 function drawBoat(ctx, v, b, t) {
   const p = project(v, b.x, 0, b.z);
-  if (!p || p.s < 0.2) return;
+  if (!p) return;
   const w = 15 * p.s;
   const h = 4.6 * p.s;
-  // Wake.
-  ctx.strokeStyle = 'rgba(230,248,248,0.4)';
-  ctx.lineWidth = Math.max(1, p.s * 0.08);
-  ctx.beginPath();
-  ctx.moveTo(p.x - w * 0.5, p.y);
-  ctx.lineTo(p.x - w * 1.5, p.y + h * 0.8 + Math.sin(t * 2 + b.z) * 1.4);
-  ctx.moveTo(p.x + w * 0.5, p.y);
-  ctx.lineTo(p.x + w * 1.3, p.y + h * 0.7);
-  ctx.stroke();
+  // Below this scale the hull, cabin and wake are a few pixels in total
+  // and resolve into a stray coloured glyph hovering on the sea, not a
+  // boat: better nothing than a mark the eye cannot place. A rescue
+  // flare is the one exception — it is a light, and a light is exactly
+  // what carries at range, so the flare alone draws on.
+  if (p.s < 0.3) {
+    if (b.rescue) {
+      const flicker = 0.75 + 0.25 * Math.sin(t * 11);
+      const r = Math.max(9, w * 0.9);
+      const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, r);
+      glow.addColorStop(0, `rgba(255,120,40,${0.85 * flicker})`);
+      glow.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(p.x - r, p.y - h * 2.6 - r, r * 2, r * 2);
+      ctx.fillStyle = '#ffb35c';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+  // Wake — only once the boat is big enough for a wake to read as one.
+  if (p.s > 0.55) {
+    ctx.strokeStyle = 'rgba(230,248,248,0.4)';
+    ctx.lineWidth = Math.max(1, p.s * 0.08);
+    ctx.beginPath();
+    ctx.moveTo(p.x - w * 0.5, p.y);
+    ctx.lineTo(p.x - w * 1.5, p.y + h * 0.8 + Math.sin(t * 2 + b.z) * 1.4);
+    ctx.moveTo(p.x + w * 0.5, p.y);
+    ctx.lineTo(p.x + w * 1.3, p.y + h * 0.7);
+    ctx.stroke();
+  }
   // Hull and cabin.
   ctx.fillStyle = b.hue;
   ctx.beginPath();
@@ -752,22 +970,31 @@ function drawRing(ctx, v, ring, isNext, t) {
   if (rx < 3) return;
   const pulse = isNext ? 1 + Math.sin(t * 4.2) * 0.05 : 1;
   // Far rings fade into the dusk instead of floating at full strength — a lit
-  // route receding, not a scatter of bubbles. Every ring carries a bright core
-  // light at its centre, the lamp the hoop is hung from.
-  const fade = isNext ? 1 : clamp(1.15 - p.fwd / 2400, 0.16, 0.9);
+  // route receding, not a scatter of bubbles. The fade alone was not enough:
+  // at constant brightness, thickness and glow, a ring at 1–2 km still drew
+  // as a pale bubble with a lamp in it. So the rim itself changes character
+  // with range — thinner, dimmer, its cyan gone toward the dusk mauve of
+  // everything far away, its glow switched off — until a far ring is a
+  // glint on the route and only a near one is a gate. The next ring, the
+  // one she is flying at, keeps its full lamp at every range.
+  const fade = isNext ? 1 : clamp(1.2 - p.fwd / 2100, 0.16, 0.9);
   ctx.save();
   ctx.globalAlpha = fade;
   ctx.shadowColor = isNext ? '#ffc46b' : 'rgba(140,230,220,0.8)';
-  ctx.shadowBlur = isNext ? 26 : 10;
-  ctx.strokeStyle = isNext ? '#ffc46b' : 'rgba(160,235,225,0.75)';
-  ctx.lineWidth = clamp(rx * 0.09, 1.6, 9);
+  ctx.shadowBlur = isNext ? 26 : (p.fwd < 800 ? 10 : 0);
+  ctx.strokeStyle = isNext
+    ? '#ffc46b'
+    : mixc('#a0ebe1', '#8a6a86', clamp((p.fwd - 400) / 1600, 0, 0.75));
+  ctx.globalAlpha = isNext ? 1 : fade * clamp(1.25 - p.fwd / 2600, 0.34, 1);
+  ctx.lineWidth = clamp(rx * 0.09, 1.6, 9) * (isNext ? 1 : clamp(1.15 - p.fwd / 3000, 0.45, 1));
   ctx.beginPath();
   ctx.ellipse(p.x, p.y, rx * pulse, ry * pulse, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.shadowBlur = 0;
-  // The core light fades with the ring: at range it is a glint, not a lamp —
-  // a full-strength centre dot is what made far rings read as bubbles.
-  ctx.fillStyle = isNext ? '#ffe9a8' : `rgba(210,250,244,${0.25 + fade * 0.55})`;
+  // The core light fades with the ring and then again with the rim's own
+  // dimming: at range it is a glint, not a lamp — a full-strength centre
+  // dot is what made far rings read as bubbles.
+  ctx.fillStyle = isNext ? '#ffe9a8' : `rgba(210,250,244,${(0.25 + fade * 0.55) * clamp(1.25 - p.fwd / 2600, 0.34, 1)})`;
   ctx.beginPath();
   ctx.arc(p.x, p.y, clamp(rx * 0.07, 1.2, 4), 0, Math.PI * 2);
   ctx.fill();
@@ -814,6 +1041,13 @@ function drawSpray(ctx, plane, t) {
 
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
+}
+
+/** A #rrggbb colour with an alpha, as an rgba() string — for gradient stops
+ *  that must carry a toned land colour out to nothing. */
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
 /** Blend two #rrggbb colours, f of the way from a to b. Returns a #rrggbb

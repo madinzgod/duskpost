@@ -16,11 +16,13 @@ export function drawInstruments(ctx, W, H, plane, game, world, t) {
   drawMeters(ctx, H, plane, game, t);
   drawPanel(ctx, W, H, plane);
   drawApproachGuidance(ctx, W, H, plane, world);
-  // The storm speaks on the warning line: the cell's rough shoulder reaches
-  // the plane before the cloud does, so the warning reads the same air the
-  // physics flies — turbulence where she sits, from the world's own answer.
-  const turb = world && world.stormAt ? world.stormAt(plane.x, plane.z).turb : 0;
-  drawWarnings(ctx, W, H, plane, game, t, turb);
+  // The storm speaks on the warning line: the rough shoulder reaches the
+  // plane before the cloud does, so the warning reads the same air the
+  // physics flies — turbulence where she sits, from the world's own
+  // answer, and the name of the weather that makes it, so the squall
+  // line is warned about in its own words, not the cell's.
+  const st = world && world.stormAt ? world.stormAt(plane.x, plane.z) : { turb: 0, kind: null };
+  drawWarnings(ctx, W, H, plane, game, t, st.turb, st.kind);
 }
 
 function drawReadout(ctx, plane, world) {
@@ -378,12 +380,17 @@ function nearestStripAhead(plane, world) {
   return best;
 }
 
-function drawWarnings(ctx, W, H, plane, game, t, turb = 0) {
+function drawWarnings(ctx, W, H, plane, game, t, turb = 0, stormKind = null) {
   const notes = [];
   // The storm first while she is in it or on its shoulder: it is the one
-  // warning that changes the route, not just the flying.
-  if (plane.airborne && turb > 0.55) notes.push('STORM CELL — ROUGH AIR, KEEP EAST');
-  else if (plane.airborne && turb > 0.18) notes.push('STORM CELL AHEAD — KEEP EAST');
+  // warning that changes the route, not just the flying. Each weather
+  // speaks for itself — the cell is a place to keep east of; the squall
+  // line lies across the course and is crossed, timed, or waited out.
+  if (plane.airborne && turb > 0.55) {
+    notes.push(stormKind === 'squall' ? 'SQUALL LINE — ROUGH AIR' : 'STORM CELL — ROUGH AIR, KEEP EAST');
+  } else if (plane.airborne && turb > 0.18) {
+    notes.push(stormKind === 'squall' ? 'SQUALL LINE AHEAD — TIME YOUR CROSSING' : 'STORM CELL AHEAD — KEEP EAST');
+  }
   if (plane.airborne && plane.speed < 24 && plane.y > 3) notes.push('STALL — NOSE DOWN, ADD POWER');
   if (plane.fuel < 18) notes.push('LOW FUEL — LAND AND REFUEL');
   if (plane.hull < 35) notes.push('HULL CRITICAL');
