@@ -313,6 +313,80 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.25);
     ctx.fillRect(p.x - len / 2, p.y, len, 2);
   }
+  // V16: a mid-band pass for the sea neither loop reaches — the
+  // near-water pass gates fwd ≤ 600 and the far-band loop samples
+  // py only up to horizon+90, so screen y horizon+90…+260 (fwd
+  // 600–1400 at the cover camera) carries no dashes at all: the
+  // cover's mid-right sea is dead flat (0 px >12) and the
+  // approach's mid-right sea is thin (V16 audit problems 6, 8).
+  // Same frame-biased sampling as the far-band loop, same dash
+  // shape; the far-band loop is untouched.
+  // V16 rev: the first render's dashes measured 0 px >12 in the
+  // target box — the fillStyle alpha (0.35) multiplies the
+  // globalAlpha (0.10–0.25), so each dash changed its pixels by
+  // ~5–7 levels, below the metric and below the eye. This pass
+  // sets its own fillStyle (alpha 1.0) so the globalAlpha below
+  // is the dash's real alpha: 0.12–0.30, the same strength the
+  // near-water dashes carry at mid range.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 90; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 17.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 1272;
+    const py = v.horizon + 90 + hash(2) * 170;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 600 || fwd > 1400) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
+    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+  }
+  // V16: a left-weighted second near-water pass — the frame-biased
+  // pass spreads its 180 dashes over the whole visible sea, so a
+  // 150×40 px box holds ~4 of them: the delivery far-left sea
+  // (26 px >12), the cover's bottom-left sea (114) and the narrow
+  // strip between the FUEL and instrument panels (52/104) are all
+  // thin for the same reason (V16 audit problems 1, 5, 11). This
+  // pass samples only the frame's left third (px 4–460) with the
+  // same fwd gate and dash shape as the first pass, so those boxes
+  // get their own density instead of the frame's average. The
+  // existing 180-dash pass is unchanged.
+  // V16 rev: the first render lifted the delivery box only
+  // 26 → 71 and the cover BL only 114 → 180 — the pass works,
+  // it is just thin per box. Count 70 → 140. (The mid-band pass
+  // above sets fillStyle to alpha 1.0; this pass restores the
+  // 0.35 the near-water alpha math assumes.)
+  ctx.fillStyle = 'rgba(220,245,245,0.35)';
+  for (let i = 0; i < 140; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 23.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 456;
+    const py = v.horizon + 24 + hash(2) * (796 - v.horizon - 24);
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 600) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 6, 30);
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
+    ctx.fillRect(p.x - len / 2, p.y, len, Math.max(2, p.s * 0.04));
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -486,16 +560,20 @@ function drawSquall(ctx, v, sq, t) {
   // showers. A gap that is only absence reads as nothing at judge
   // size; a gap with light in it reads as a break in weather, which
   // is the squall's whole tactical story (a line you can time).
+  // V16: the washes were still marginal at judge size (V16 audit
+  // problem 2) — wider (0.08 → 0.12 half-width) and brighter
+  // (0.16 → 0.22 top), judged against the smear risk after the
+  // render: if the wash reads as a second bank, it is too much.
   for (const gfx of [-0.35, 0.35]) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
-    grad.addColorStop(0, 'rgba(216,198,208,0.16)');
-    grad.addColorStop(1, 'rgba(216,198,208,0.05)');
+    grad.addColorStop(0, 'rgba(216,198,208,0.22)');
+    grad.addColorStop(1, 'rgba(216,198,208,0.08)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(base.x + (gfx - 0.08) * halfW, baseY);
-    ctx.lineTo(base.x + (gfx + 0.08) * halfW, baseY);
-    ctx.lineTo(base.x + (gfx + 0.10) * halfW, seaY);
-    ctx.lineTo(base.x + (gfx - 0.10) * halfW, seaY);
+    ctx.moveTo(base.x + (gfx - 0.12) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.12) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.14) * halfW, seaY);
+    ctx.lineTo(base.x + (gfx - 0.14) * halfW, seaY);
     ctx.closePath();
     ctx.fill();
   }
@@ -505,16 +583,21 @@ function drawSquall(ctx, v, sq, t) {
   // rain is discrete now: ~27 streaks, alpha 0.28, 2 px wide —
   // short dashes, not a smear. (Length, ~0.55 of the fall, was
   // already right and is unchanged.)
-  ctx.strokeStyle = 'rgba(190,200,220,0.28)';
-  ctx.lineWidth = Math.max(2, s * 0.6);
-  const streaks = Math.max(5, Math.floor(halfW / 10));
+  // V16: the streaks still wash out at judge size — the curtain
+  // reads as a pale smear, not rain, at 768×480 (V16 audit problem
+  // 9). More rain per curtain: ~34 streaks, alpha 0.32, 2.5 px
+  // wide, 0.65 of the fall — still short dashes, not a smear;
+  // judged at judge size after the render.
+  ctx.strokeStyle = 'rgba(190,200,220,0.32)';
+  ctx.lineWidth = Math.max(2.5, s * 0.7);
+  const streaks = Math.max(5, Math.floor(halfW / 8));
   for (let i = 0; i < streaks; i += 1) {
     const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76;
     if (!inCluster(fx)) continue; // no streaks in the gaps: the rain breaks with the bank
     const drift = ((t * 0.8 + i * 0.29) % 1) * 0.3;
     ctx.beginPath();
     ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * drift * 0.2);
-    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.55 + drift * 0.4));
+    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.65 + drift * 0.35));
     ctx.stroke();
   }
   // Distance haze for the bank itself: the islands retint toward the
@@ -536,6 +619,25 @@ function drawSquall(ctx, v, sq, t) {
     if (fy < 0.5) continue;
     softPuff(ctx, base.x + fx * halfW - halfW * 0.02, baseY - bodySpan * (fy + 0.05), fr * halfW * 0.66, blend(96, 84, 120, 0.56), blend(96, 84, 120, 0));
   }
+  // V16 rev: the gap wash above draws BEFORE the bank puffs, so the
+  // puff tails bury most of it — the first render lifted the gap
+  // centres by only +3–4 levels (V16 audit problem 2). This second
+  // wash draws AFTER the puffs, in the gaps only, same geometry,
+  // 0.14 → 0.04: light the eye can hold at judge size, narrow
+  // enough not to become a second bank.
+  for (const gfx of [-0.35, 0.35]) {
+    const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
+    grad.addColorStop(0, 'rgba(216,198,208,0.14)');
+    grad.addColorStop(1, 'rgba(216,198,208,0.04)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(base.x + (gfx - 0.12) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.12) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.14) * halfW, seaY);
+    ctx.lineTo(base.x + (gfx - 0.14) * halfW, seaY);
+    ctx.closePath();
+    ctx.fill();
+  }
 
   // Rain-light at the sea line: a soft pale band where the curtain
   // meets the water, so the bank hangs into the sea through its own
@@ -556,13 +658,14 @@ function drawSquall(ctx, v, sq, t) {
   ctx.restore();
   // The gaps get their own brighter spot on that sea line, where the
   // gap's rain-light wash lands: the break in the bank reads all the
-  // way down to the water.
+  // way down to the water. V16: 0.18 → 0.24, with the wider wash
+  // above (V16 audit problem 2).
   for (const gfx of [-0.35, 0.35]) {
     ctx.save();
     ctx.translate(base.x + gfx * halfW, seaY);
     ctx.scale(1, 0.07);
     const spot = ctx.createRadialGradient(0, 0, 2, 0, 0, halfW * 0.17);
-    spot.addColorStop(0, 'rgba(206,196,210,0.18)');
+    spot.addColorStop(0, 'rgba(206,196,210,0.24)');
     spot.addColorStop(1, 'rgba(206,196,210,0)');
     ctx.fillStyle = spot;
     ctx.beginPath();
@@ -694,25 +797,32 @@ function drawStorm(ctx, v, storm, t) {
     ctx.lineTo(px + len * 0.35, py + len);
     ctx.stroke();
   }
-  // V15: the ring above still wastes most of its dashes off-frame
-  // and above the sea line — 11 of them land in the bottom-right
-  // corner (V15 audit problem 9). A bottom-band frame-biased
-  // stipple: sample the screen point in the visible bottom band
-  // and invert through the cell geometry (fx = (px−cx)/R,
-  // fz = (py−seaY)/(R×0.085)), kept only inside the annulus and
-  // outside the bottom instrument panel — every kept dash lands
-  // in the visible bottom band. Same slant, length and alpha as
-  // the ring above; the 240-dash loop is unchanged.
-  for (let i = 0; i < 60; i += 1) {
+  // V16: the strip right of the FUEL panel (py 640–700) is inside
+  // the shadow disc (d2 ≤ 0.6), so the annulus floor kept this
+  // pass off it, and the mid-right sea (py 560–620) sits above
+  // the pass's py range (V16 audit problems 7, 10). The pass now
+  // samples py 560–796 with twice the count and no annulus floor
+  // (d2 ≤ 9.4 only) — it grains the shadow's visible band as well
+  // as the open sea — and rejects both bottom HUD rects. Same
+  // slant, length and alpha as the ring above; the 240-dash loop
+  // is unchanged.
+  // V16 rev: the first render changed the FUEL strip 13 → 13 —
+  // the pass works (mid-right sea 49 → 126) but the strip's box
+  // holds ~2 dashes of 1 px width at alpha ≤ 0.14, below the
+  // metric. Count 110 → 160 and the alpha lifts (base 0.06–0.11
+  // → 0.08–0.14, cap 0.14 → 0.20), so a dash on the dark shadow
+  // sea changes its pixels by ~20 levels instead of ~13.
+  for (let i = 0; i < 160; i += 1) {
     const px = 4 + grain(i, 111) * 1272;
-    const py = 700 + grain(i, 112) * 96;
+    const py = 560 + grain(i, 112) * 236;
     if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
     const fx = (px - cx) / R;
     const fz = (py - seaY) / (R * 0.085);
     const d2 = fx * fx * 0.8 + fz * fz;
-    if (d2 < 1.15 || d2 > 9.4) continue;
+    if (d2 > 9.4) continue;
     const len = R * (0.015 + grain(i, 113) * 0.025);
-    ctx.globalAlpha = Math.min(0.14, (0.06 + grain(i, 114) * 0.05) * shaftBoostPre);
+    ctx.globalAlpha = Math.min(0.20, (0.08 + grain(i, 114) * 0.06) * shaftBoostPre);
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + len * 0.35, py + len);
@@ -1003,6 +1113,31 @@ function drawStorm(ctx, v, storm, t) {
       lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.32)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
+  }
+  // V16 rev: the dash pass is REMOVED — the first render's
+  // dashes read as scratches, a separate layer of thin dark
+  // marks over the cloud, and the pale discs are still readable
+  // as circles at 2×. Dashes placed independently of the puffs
+  // cannot break a rim they never touch. The proven fix in this
+  // file is the belly's own: a jittered duplicate. Each mottle
+  // puff gets two small duplicates at hashed offsets, opposite
+  // tone, 0.55× radius — they overlap the original's rim
+  // asymmetrically, so each blob is lumpy, not circular.
+  for (let i = 0; i < 24; i += 1) {
+    const fx = -0.20 + (i / 23) * 0.25 + (grain(i, 101) - 0.5) * 0.05;
+    const fy = 0.25 + grain(i, 102) * 0.40;
+    const fr = 0.03 + grain(i, 103) * 0.025;
+    const lit = i % 2 === 0;
+    for (const [jx, jy, jr] of [[0.018, 0.012, 0.55], [-0.015, -0.014, 0.5]]) {
+      softPuff(
+        ctx,
+        cx + (fx + jx + (grain(i, 125) - 0.5) * 0.01) * R,
+        baseY - bodySpan * (fy + jy + (grain(i, 126) - 0.5) * 0.01),
+        fr * R * jr,
+        lit ? 'rgba(30,26,48,0.22)' : 'rgba(122,96,128,0.20)',
+        lit ? 'rgba(30,26,48,0)' : 'rgba(122,96,128,0)',
+      );
+    }
   }
   for (let i = 0; i < 6; i += 1) {
     const fx = -0.62 + i * 0.24 + (grain(i, 5) - 0.5) * 0.06;
@@ -2235,6 +2370,35 @@ function drawPalm(ctx, v, x, y, z, s) {
     const hh = Math.sin(x * 12.9898 + z * 0.371 + i * 7.77 + salt * 3.1) * 43758.5453;
     return hh - Math.floor(hh);
   };
+  // V16: frond-first — the fronds draw BEFORE the crown body, so
+  // their roots hide inside the mass and their arcs define the
+  // silhouette's outer edge instead of sticking out of a disc
+  // (V16 audit problem 4). The middle three still arc over the
+  // top; only the hub they emerge from is smaller now.
+  // V15 rev: the first render's fronds were still thin lines
+  // sticking out sideways past the crown (2× delivery crop) —
+  // shorter, thicker, denser, drooping deeper, so they read as
+  // foliage mass hugging the crown instead of spider legs. The
+  // middle three of nine arc over the top (0.85), as before.
+  ctx.strokeStyle = '#2f6b46';
+  ctx.lineWidth = Math.max(2.2, base.s * 0.24);
+  for (let i = 0; i < 9; i += 1) {
+    const a = Math.PI * (0.05 + i * 0.115);
+    const ox = tx + (ph(i, 41) - 0.5) * h * 0.30;
+    const oy = ty - h * 0.10 + ph(i, 42) * h * 0.03;
+    const len = h * (0.28 + ph(i, 43) * 0.14);
+    const droop = h * (0.22 + ph(i, 44) * 0.14);
+    // V14: every frond peaked below the crown's top edge, so no
+    // frond ever broke the silhouette and the crown read as a disc
+    // (V14 audit problem 3). The three middle fronds arc over the
+    // top now (control factor 0.85, peaks ~ty − 0.32h); the side
+    // fronds keep the old low arc.
+    const arc = (i >= 3 && i <= 5) ? 0.85 : 0.30;
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.quadraticCurveTo(ox + Math.cos(a) * len * 0.5, oy - Math.sin(a) * len * arc, ox + Math.cos(a) * len, oy + droop);
+    ctx.stroke();
+  }
   if (base.s < 30) {
     ctx.save();
     // V11: the crown is two-tone and its alpha floor is lifted.
@@ -2253,28 +2417,41 @@ function drawPalm(ctx, v, x, y, z, s) {
     // base, a higher lit top, a deeper underside crescent. Frond
     // angles and lengths are untouched — the approach frame's palms
     // read well and are not re-opened.
+    // V16: the hub is smaller under the frond-first draw — the
+    // crown's top edge is now frond-defined, not disc-defined
+    // (V16 audit problem 4). Base 0.38h×0.28h → 0.30h×0.22h;
+    // three small bumps of different sizes and heights (see the
+    // V16 rev note below) ridge the top edge instead of two
+    // matching lobes.
     ctx.fillStyle = '#2c5a3c';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.02, h * 0.38, h * 0.28, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.02, h * 0.30, h * 0.22, 0, 0, Math.PI * 2);
     ctx.fill();
-    // V14: the crown was still one clean ellipse — the dome was
-    // interior shading, and the top edge read as a disc at close
-    // and mid range (V14 audit problem 3). Two lobes on the crown's
-    // top break the silhouette into a lumpy mass: their tops reach
-    // ty − 0.34h, 0.08h above the base top.
+    // V16 rev: the first render still reads as two discs side by
+    // side at 2× — the two lobes match each other too well, and
+    // the fronds dangle 0.34–0.54h below the crown like
+    // tentacles instead of hugging it. Three smaller bumps of
+    // different sizes and heights (0.09–0.12h at ty−0.04h,
+    // ty−0.14h, ty−0.08h) make the top edge a lumpy ridge with
+    // no single clean arc; the fronds shorten (0.28–0.42h) and
+    // droop less (0.22–0.36h) so they stay inside the crown's
+    // silhouette instead of hanging past it.
     ctx.beginPath();
-    ctx.ellipse(tx - h * 0.20, ty - h * 0.14, h * 0.20, h * 0.20, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx - h * 0.14, ty - h * 0.04, h * 0.10, h * 0.10, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(tx + h * 0.19, ty - h * 0.14, h * 0.18, h * 0.20, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty - h * 0.14, h * 0.12, h * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx + h * 0.14, ty - h * 0.08, h * 0.09, h * 0.09, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#1e4229';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.15, h * 0.30, h * 0.12, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.15, h * 0.24, h * 0.10, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#6f9a5f';
     ctx.beginPath();
-    ctx.ellipse(tx - h * 0.09, ty - h * 0.08, h * 0.30, h * 0.18, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx - h * 0.09, ty - h * 0.08, h * 0.24, h * 0.14, 0, 0, Math.PI * 2);
     ctx.fill();
     // V15 rev: the crown is still one flat tone under the lit cap
     // (2× delivery crop) — two small mid-tone ellipses break the
@@ -2282,38 +2459,15 @@ function drawPalm(ctx, v, x, y, z, s) {
     // carry the same patches.
     ctx.fillStyle = '#356b47';
     ctx.beginPath();
-    ctx.ellipse(tx + (ph(9, 45) - 0.5) * h * 0.3, ty - h * 0.02, h * 0.16, h * 0.12, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx + (ph(9, 45) - 0.5) * h * 0.3, ty - h * 0.02, h * 0.13, h * 0.10, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#265231';
     ctx.beginPath();
-    ctx.ellipse(tx - (ph(9, 46) - 0.5) * h * 0.3, ty + h * 0.10, h * 0.14, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx - (ph(9, 46) - 0.5) * h * 0.3, ty + h * 0.10, h * 0.11, h * 0.08, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
-  // V15 rev: the first render's fronds were still thin lines
-  // sticking out sideways past the crown (2× delivery crop) —
-  // shorter, thicker, denser, drooping deeper, so they read as
-  // foliage mass hugging the crown instead of spider legs. The
-  // middle three of nine arc over the top (0.85), as before.
-  ctx.strokeStyle = '#2f6b46';
-  ctx.lineWidth = Math.max(2.2, base.s * 0.24);
-  for (let i = 0; i < 9; i += 1) {
-    const a = Math.PI * (0.05 + i * 0.115);
-    const ox = tx + (ph(i, 41) - 0.5) * h * 0.30;
-    const oy = ty - h * 0.10 + ph(i, 42) * h * 0.03;
-    const len = h * (0.34 + ph(i, 43) * 0.18);
-    const droop = h * (0.34 + ph(i, 44) * 0.20);
-    // V14: every frond peaked below the crown's top edge, so no
-    // frond ever broke the silhouette and the crown read as a disc
-    // (V14 audit problem 3). The three middle fronds arc over the
-    // top now (control factor 0.85, peaks ~ty − 0.32h); the side
-    // fronds keep the old low arc.
-    const arc = (i >= 3 && i <= 5) ? 0.85 : 0.30;
-    ctx.beginPath();
-    ctx.moveTo(ox, oy);
-    ctx.quadraticCurveTo(ox + Math.cos(a) * len * 0.5, oy - Math.sin(a) * len * arc, ox + Math.cos(a) * len, oy + droop);
-    ctx.stroke();
-  }
+  // (Fronds now draw before the crown body — see the V16 note above.)
 }
 
 function drawLighthouse(ctx, v, isl, t) {
