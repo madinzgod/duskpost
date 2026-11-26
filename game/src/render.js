@@ -855,11 +855,24 @@ function drawSquall(ctx, v, sq, t) {
     };
     const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76 + (jh(71) - 0.5) * 0.03;
     if (!inCluster(fx)) continue; // no streaks in the gaps: the rain breaks with the bank
+    // V22: the streaks read as a picket fence above the island at full
+    // size (audit problem 6 — proven by a streaks-off render): equal
+    // lengths, aligned tops, even spacing. The fall at the cover's
+    // 2.4 km is ~30 px, so the V19 jitter (±0.06 length, ±0.015
+    // position) is sub-visible there. Lengths now vary by ±0.30 of
+    // the fall and tops by ±0.15, so no two streaks share a top or a
+    // bottom; spacing stays even (rain in a shaft is evenly spaced)
+    // and alpha stays 0.48 (the V18 judge-size requirement). Ends are
+    // clamped so every streak is at least a quarter of the fall and
+    // none runs past the sea line.
     const drift = ((t * 0.8 + i * 0.29) % 1) * 0.3;
-    const lenJit = (jh(72) - 0.5) * 0.12;
+    const lenJit = (jh(72) - 0.5) * 0.6;
+    const topJit = (jh(73) - 0.5) * 0.3;
+    const top = Math.max(0, drift * 0.2 + topJit);
+    const end = Math.min(1.0, Math.max(top + 0.25, 0.82 + drift * 0.25 + lenJit));
     ctx.beginPath();
-    ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * drift * 0.2);
-    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.82 + drift * 0.25 + lenJit));
+    ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * top);
+    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * end);
     ctx.stroke();
   }
   // Distance haze for the bank itself: the islands retint toward the
@@ -2959,13 +2972,25 @@ function drawLighthouse(ctx, v, isl, t) {
   // V14: the beam ran at alpha 0.09 — invisible at dusk, so the
   // lighthouse threw no light (V14 audit problem 8). 0.16 base now:
   // a faint fan at last light, not a searchlight.
-  ctx.globalAlpha = 0.16 + 0.06 * Math.sin(t * 2.2);
-  ctx.fillStyle = '#ffe9a8';
-  ctx.beginPath();
-  ctx.moveTo(base.x, lampY);
-  ctx.arc(base.x, lampY, H * 2.4, beamA, beamA + 0.19);
-  ctx.closePath();
-  ctx.fill();
+  // V22: one flat sector at flat alpha is a wedge with hard straight
+  // edges (audit problem 11). Three nested sectors, centred on the
+  // same bearing, step the alpha down toward the edges, so the fan
+  // softens instead of cutting. Probe-only: keep only if the 2× crop
+  // shows a softer fan.
+  const pulse = 0.16 + 0.06 * Math.sin(t * 2.2);
+  for (const [a0, a1, frac] of [
+    [beamA, beamA + 0.19, 0.38],
+    [beamA + 0.03, beamA + 0.16, 0.62],
+    [beamA + 0.06, beamA + 0.13, 1.0],
+  ]) {
+    ctx.globalAlpha = pulse * frac;
+    ctx.fillStyle = '#ffe9a8';
+    ctx.beginPath();
+    ctx.moveTo(base.x, lampY);
+    ctx.arc(base.x, lampY, H * 2.4, a0, a1);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.restore();
   ctx.fillStyle = '#ffe9a8';
   ctx.beginPath();
@@ -3003,15 +3028,21 @@ function drawBoat(ctx, v, b, t) {
   // Two strokes per arm (a wide faint one under a narrow brighter one):
   // one 1 px line per arm read as a scratch, not a wake (V21 audit
   // problem 9). A soft foam pool under the hull grounds her on the water.
+  // V22: the wake scales with the boat's speed (audit problem 10) — a
+  // wake is water the boat has moved, and the rescue boat drifts at
+  // 0.4 m/s yet trailed a full wake. Drifters (1.2–2.6 m/s) keep
+  // theirs; the rescue boat's fades to ~0.27×. Probe-only: keep only
+  // if the 2× crop still reads the boat as grounded on the water.
   if (p.s > 0.55) {
+    const wakeA = clamp(b.speed / 1.5, 0.15, 1);
     const wakeArm = (x0, y0, x1, y1) => {
-      ctx.strokeStyle = 'rgba(230,248,248,0.16)';
+      ctx.strokeStyle = `rgba(230,248,248,${0.16 * wakeA})`;
       ctx.lineWidth = Math.max(2, p.s * 0.22);
       ctx.beginPath();
       ctx.moveTo(x0, y0);
       ctx.lineTo(x1, y1);
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(230,248,248,0.4)';
+      ctx.strokeStyle = `rgba(230,248,248,${0.4 * wakeA})`;
       ctx.lineWidth = Math.max(1, p.s * 0.08);
       ctx.beginPath();
       ctx.moveTo(x0, y0);
@@ -3024,7 +3055,7 @@ function drawBoat(ctx, v, b, t) {
     ctx.translate(p.x, p.y);
     ctx.scale(1, 0.3);
     const foam = ctx.createRadialGradient(0, 0, 2, 0, 0, w * 0.62);
-    foam.addColorStop(0, 'rgba(230,248,248,0.20)');
+    foam.addColorStop(0, `rgba(230,248,248,${0.20 * wakeA})`);
     foam.addColorStop(1, 'rgba(230,248,248,0)');
     ctx.fillStyle = foam;
     ctx.beginPath();
@@ -3073,13 +3104,20 @@ function drawBoat(ctx, v, b, t) {
     ctx.beginPath();
     ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.3), 0, Math.PI * 2);
     ctx.fill();
-    // Smoke: soft puffs, not flat discs — the flat arcs read as stacked
-    // dark coins above the flare (V21 audit problem 7). softPuff's
-    // gradient has no hard edge anywhere.
+    // Smoke: a wisp, not coins — the flat-core softPuffs read as
+    // stacked dark discs above the flare (V22 audit problem 4; V21's
+    // own revision crop shows the same two discs its fix was meant to
+    // remove). Pale warm smoke lit by the flare, flat and wide
+    // (squash 0.45), its core steep so no rim closes (steepPuff's
+    // solid area ends at 0.25r), drifting sideways as it rises and
+    // fading with height. The flare star and glow are untouched.
     for (let i = 0; i < 4; i += 1) {
       const ph = (t * 0.22 + i / 4) % 1;
-      softPuff(ctx, p.x + ph * w * 0.5, p.y - h * 2.8 - ph * h * 3.4,
-        (2 + ph * 7) * p.s * 0.4, 'rgba(60,50,48,0.34)', 'rgba(60,50,48,0)', 0.9);
+      const hh = Math.sin(i * 12.9898 + 3.7) * 43758.5453;
+      const jx = (hh - Math.floor(hh)) - 0.5;
+      const a = 0.26 * (1 - ph * 0.65);
+      steepPuff(ctx, p.x + ph * w * 0.6 + jx * w * 0.3, p.y - h * 2.8 - ph * h * 3.4,
+        (2 + ph * 7) * p.s * 0.4, `rgba(226,190,160,${a})`, 'rgba(226,190,160,0)', 0.45);
     }
   }
 }

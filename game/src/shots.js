@@ -247,6 +247,36 @@ export function stageShot(name, seed) {
     ring.x = plane.x + 30;
     ring.y = 18;
     ring.z = plane.z + 130;
+    // V22: two far rings overlap into a bubble Venn mid-frame
+    // (audit problem 5). Separate any pair whose projected rims
+    // overlap, shifting the later ring sideways in world x just
+    // enough to clear — only rings that already overlap move, the
+    // next (gold) ring is never touched, and only in-frame rings are
+    // considered, so no ring is invented where the shot had none.
+    // X-only shifts cannot change any ring's next/far status
+    // (render.js keys on z). Two passes settle chains.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const v = makeView(plane, null);
+      const far = world.rings.filter((r) => !r.passed && r.z > plane.z && r !== ring);
+      const proj = far.map((r) => ({ r, p: project(v, r.x, r.y, r.z) }))
+        .filter((o) => o.p && o.p.x > 0 && o.p.x < 1280 && o.p.y > 0 && o.p.y < 800);
+      for (let i = 0; i < proj.length; i += 1) {
+        for (let j = i + 1; j < proj.length; j += 1) {
+          const a = proj[i];
+          const b = proj[j];
+          const ra = 11 * a.p.s;
+          const rb = 11 * b.p.s;
+          const dx = b.p.x - a.p.x;
+          const dy = b.p.y - a.p.y;
+          const d = Math.hypot(dx, dy);
+          const need = ra + rb + 8;
+          if (d >= need || d === 0) continue;
+          const shift = (need - d) / b.p.s + 4;
+          b.r.x += (dx >= 0 ? 1 : -1) * shift;
+          b.p = project(v, b.r.x, b.r.y, b.r.z);
+        }
+      }
+    }
     // The card shows this island's run: describe the current mission as Cahaya's.
     missions.current.island = isl;
     missions.current.targetX = isl.x;

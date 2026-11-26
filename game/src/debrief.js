@@ -107,7 +107,12 @@ export function drawRouteMap(ctx, world, game, plane, t) {
   const sqX = mx(sq.z);
   ctx.strokeStyle = 'rgba(190,140,180,0.4)';
   ctx.lineWidth = 14;
-  ctx.setLineDash([10, 8]);
+  // V22: the dashes were [10,8] at lineWidth 14 — 14×10 squares, so
+  // the line read as discrete grey squares (audit problem 9). The
+  // first render's [18,8] still read as squares (18×14 is barely
+  // taller than wide); a dash must be clearly longer than wide.
+  // [32,10] reads as a line.
+  ctx.setLineDash([32, 10]);
   ctx.beginPath();
   ctx.moveTo(sqX, 160);
   ctx.lineTo(sqX, 440);
@@ -260,7 +265,7 @@ export function drawRouteMap(ctx, world, game, plane, t) {
   ctx.fillStyle = '#ffe9c9';
   ctx.font = '600 20px system-ui, sans-serif';
   ctx.fillText(
-    `${stats.deliveries} MAIL · ${stats.rings} RINGS · ${stats.rescues} RESCUE${stats.rescues === 1 ? '' : 'S'}`,
+    `${stats.deliveries} MAIL · ${stats.rings} RING${stats.rings === 1 ? '' : 'S'} · ${stats.rescues} RESCUE${stats.rescues === 1 ? '' : 'S'}`,
     1184, 612,
   );
   if (t * 1.4 % 1 < 0.68) {
