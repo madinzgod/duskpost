@@ -94,16 +94,20 @@ function drawSky(ctx, v, light, t) {
   glow.addColorStop(1, 'rgba(255,140,70,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(sunX - 250, sunY - 250, 500, 500);
-  // The disc's own rim fades over its outer quarter: a flat solid disc
-  // cut one clean circle against the sky — a sticker of a sun — however
-  // soft the shoulder outside it was made.
-  const disc = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 30);
+  // The disc's own rim fades from its middle out past its edge: a
+  // flat solid disc cut one clean circle against the sky — a sticker
+  // of a sun — however soft the shoulder outside it was made. The
+  // first fade (solid to 0.72r, gone at 1.08r) still left a defined
+  // circle at full size (V10 audit problem 9); the fade now starts
+  // at 0.5r and runs to 1.15r, so the disc is light all the way out
+  // and its rim is a brightening, not an edge.
+  const disc = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 32);
   disc.addColorStop(0, '#ffd9a0');
-  disc.addColorStop(0.72, '#ffd9a0');
+  disc.addColorStop(0.5, '#ffd9a0');
   disc.addColorStop(1, 'rgba(255,217,160,0)');
   ctx.fillStyle = disc;
   ctx.beginPath();
-  ctx.arc(sunX, sunY, 30, 0, Math.PI * 2);
+  ctx.arc(sunX, sunY, 32, 0, Math.PI * 2);
   ctx.fill();
   // The sun's shoulder: a gradient out to nothing, not a second flat
   // disc — a flat r34 disc at alpha 0.35 over the r27 core left a hard
@@ -181,12 +185,22 @@ function drawSea(ctx, v, plane, light) {
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(220,245,245,0.35)';
   for (let i = 0; i < 70; i += 1) {
-    const wz = plane.z + 40 + ((i * 613.7) % 1500);
-    // A hashed sideways jitter on top of the modular placement: the
-    // bare steps lay the dashes on diagonal lattice rows, a pattern
-    // stamped on the water; jittered, they are just sparkle.
-    const wx = plane.x + ((i * 389.3) % 900) - 450 + Math.sin(i * 91.7) * 70;
-    const p = project(v, wx, 0, wz + ((plane.z * 3 + i * 91) % 60));
+    // Hashed placement, not modular: the old steps — (i × 613.7) %
+    // 1500 in z, (i × 389.3) % 900 in x — are two arithmetic
+    // progressions, and their points lie on lattice runs however
+    // much sideways jitter is added; from the cover's camera one
+    // run aligned into a dotted column descending the water, a
+    // marker line instead of light (V10 audit problem 10). A
+    // sin-hash of the index (the pattern this file uses for grain
+    // and jitter everywhere else) scatters the same 70 dashes over
+    // the same ranges with no runs left to align.
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const wz = plane.z + 40 + hash(1) * 1500;
+    const wx = plane.x + hash(2) * 900 - 450 + Math.sin(i * 91.7) * 70;
+    const p = project(v, wx, 0, wz + hash(3) * 60);
     if (!p || p.y < v.horizon) continue;
     const len = clamp(p.s * 0.09, 2, 26);
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.05, 0.4);
@@ -550,18 +564,34 @@ function drawStorm(ctx, v, storm, t) {
   // god-ray than rain, however low each layer's alpha was set. The
   // two widest layers are weaker again for the same reason: a wide
   // layer's edge travels furthest across open water.
-  [[-0.10, 0.008], [-0.045, 0.014], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]].forEach(([shrink, a], li) => {
+  [[-0.10, 0.006], [-0.045, 0.011], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]].forEach(([shrink, a], li) => {
     const layerA = a * shaftBoost;
     const lslant = slant * (0.82 + li * 0.07);
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
     grad.addColorStop(0, `rgba(168,182,205,${layerA + 0.10 * shaftBoost})`);
     grad.addColorStop(1, `rgba(168,182,205,${layerA * 0.4})`);
     ctx.fillStyle = grad;
+    // Each layer's outline kinks once at mid-height: per-layer
+    // slants (V9) stopped the edges being parallel, but each edge
+    // was still one straight line from cloud base to sea — at the
+    // storm frame's close range the longest straight lines in the
+    // frame, and the sea banded along them (V10 audit problem 8).
+    // The bottom half of every layer shifts by a hashed few
+    // hundredths of R, so no edge runs straight the whole fall;
+    // the two widest layers also weaken again (0.008 → 0.006,
+    // 0.014 → 0.011 in the table above).
+    const midY = (baseY + seaY) / 2;
+    const kink = (grain(li, 77) - 0.5) * R * 0.05;
+    const topW = R * (0.40 - shrink);
+    const midW = R * (0.44 - shrink);
+    const botW = R * (0.48 - shrink);
     ctx.beginPath();
-    ctx.moveTo(cx - R * (0.40 - shrink), baseY);
-    ctx.lineTo(cx + R * (0.40 - shrink), baseY);
-    ctx.lineTo(cx + R * (0.48 - shrink) + lslant, seaY);
-    ctx.lineTo(cx - R * (0.48 - shrink) + lslant, seaY);
+    ctx.moveTo(cx - topW, baseY);
+    ctx.lineTo(cx + topW, baseY);
+    ctx.lineTo(cx + midW + lslant * 0.5, midY);
+    ctx.lineTo(cx + botW + lslant + kink, seaY);
+    ctx.lineTo(cx - botW + lslant + kink, seaY);
+    ctx.lineTo(cx - midW + lslant * 0.5, midY);
     ctx.closePath();
     ctx.fill();
   });
@@ -759,22 +789,58 @@ function drawStorm(ctx, v, storm, t) {
         nodes[i - 1][1] + (seaY - baseY) / 4,
       ]);
     }
-    const fire = ctx.createRadialGradient(nodes[0][0], nodes[0][1], 4, nodes[0][0], nodes[0][1], R * 0.30);
+    const fire = ctx.createRadialGradient(nodes[0][0], nodes[0][1], 4, nodes[0][0], nodes[0][1], R * 0.26);
     fire.addColorStop(0, `rgba(255,244,200,${0.50 * flash})`);
     fire.addColorStop(1, 'rgba(255,244,200,0)');
     ctx.fillStyle = fire;
-    ctx.fillRect(nodes[0][0] - R * 0.32, nodes[0][1] - R * 0.32, R * 0.64, R * 0.64);
+    ctx.fillRect(nodes[0][0] - R * 0.28, nodes[0][1] - R * 0.28, R * 0.56, R * 0.56);
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    for (const [gw, ga] of [[0.15, 0.10], [0.07, 0.13]]) {
-      ctx.strokeStyle = `rgba(255,244,200,${ga * flash})`;
-      ctx.lineWidth = Math.max(3, R * gw);
-      ctx.beginPath();
-      ctx.moveTo(nodes[0][0], nodes[0][1]);
-      for (let i = 1; i < nodes.length; i += 1) ctx.lineTo(nodes[i][0], nodes[i][1]);
-      ctx.stroke();
-    }
+    // The channel glow, broken three ways. As two clean strokes
+    // (R × 0.15 / R × 0.07) along this polyline it was a uniform
+    // ribbon on a regular zigzag — a lit chevron, a symbol, not lit
+    // cloud (V10 audit problem 1). Now the wide pass is narrower
+    // (R × 0.10) and stroked SEGMENT BY SEGMENT with hashed alpha
+    // and width, so the band's brightness varies along its length;
+    // a second, wider pass under it strokes a hashed-offset copy of
+    // the channel, so the two passes' edges nowhere agree; and the
+    // mid pass is hashed the same way. What is left is light pooled
+    // along a strike — brightest where the hashes agree, gone where
+    // they don't. The fire disc above shrank with it (R × 0.30 →
+    // R × 0.26): a smooth radial disc is the same family of shape.
+    // And the two wide passes follow a SMOOTHED copy of the channel
+    // (interior nodes averaged with their neighbours): light in
+    // cloud diffuses, it does not preserve the channel's corners —
+    // a glow that traces the bolt's regular zigzag corner for
+    // corner still reads as a ribbon bent into a chevron, however
+    // broken its brightness. The thin mid pass and the core keep
+    // the true nodes; only the wide light bends soft.
+    const glowSeg = (pts, gw, ga, salt) => {
+      for (let i = 1; i < pts.length; i += 1) {
+        const h = 0.72 + grain(i, salt) * 0.28;
+        ctx.strokeStyle = `rgba(255,244,200,${ga * h * flash})`;
+        ctx.lineWidth = Math.max(3, R * gw * (0.9 + grain(i, salt + 1) * 0.2));
+        ctx.beginPath();
+        ctx.moveTo(pts[i - 1][0], pts[i - 1][1]);
+        ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.stroke();
+      }
+    };
+    const smoothNodes = nodes.map(([nx, ny], i) => {
+      if (i === 0 || i === nodes.length - 1) return [nx, ny];
+      return [
+        (nodes[i - 1][0] + nx * 2 + nodes[i + 1][0]) / 4,
+        (nodes[i - 1][1] + ny * 2 + nodes[i + 1][1]) / 4,
+      ];
+    });
+    const offNodes = smoothNodes.map(([nx, ny], i) => [
+      nx + (grain(i, 81) - 0.5) * R * 0.04,
+      ny + (grain(i, 82) - 0.5) * bodySpan * 0.024,
+    ]);
+    glowSeg(offNodes, 0.13, 0.045, 83);
+    glowSeg(smoothNodes, 0.10, 0.075, 85);
+    glowSeg(nodes, 0.07, 0.13, 87);
     ctx.restore();
     ctx.shadowColor = 'rgba(255,240,190,0.9)';
     ctx.shadowBlur = 18;
@@ -838,7 +904,7 @@ function drawStorm(ctx, v, storm, t) {
         ctx,
         gx,
         gy,
-        (0.06 + grain(i, 43) * 0.07) * R,
+        (0.09 + grain(i, 43) * 0.09) * R,
         dark ? `rgba(30,26,48,${0.13 * flash})` : `rgba(150,116,140,${0.12 * flash})`,
         dark ? 'rgba(30,26,48,0)' : 'rgba(150,116,140,0)',
       );
@@ -923,7 +989,14 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // Distance haze and the draining light both retint the land: far islands melt
   // toward the dusk mauve of the sky, and as the light meter empties the ground
   // darkens with the sky instead of glowing at noon under a night sky.
-  const haze = clamp((fwd - 900) / 2600, 0, 0.45);
+  // The haze starts at 550 m in V10, not 900: below 900 it was zero
+  // by construction, so the storm frame's destination island at
+  // 715 m carried no haze at all and read bright and flat against
+  // its shadowed sea while a storm stood one island away (V10
+  // audit problem 5). At 550 the cover's island (~440 m) and the
+  // approach's (~330 m) still sit at zero; the storm frame's island
+  // takes a gentle 0.06.
+  const haze = clamp((fwd - 550) / 2600, 0, 0.45);
   const dark = (1 - clamp(light, 0, 1)) * 0.75;
   // The ground darkens harder than the palette's other tones: at last light
   // the sky keeps its orange horizon while the land is already in night, and
@@ -1377,14 +1450,21 @@ function drawApron(ctx, v, isl, toneLand) {
   const hl = isl.stripLen / 2;
   const y = isl.h + 0.08;
   let band = 0;
-  for (let d = -hl - 10; d < hl + 10; d += 12, band += 1) {
+  // The two tones split a full step in V10 and the bands run deeper:
+  // at '#55855e' vs '#487a54' (a ~13-point green difference) laid at
+  // 0.55 in 12 m bands, the mowing was a rumour — at the delivery
+  // camera's grazing angle a band compresses to a few px and a 5%
+  // value step inside it is nothing (V10 audit problem 2). A mown
+  // light against a mown dark, 0.72 alpha, 15 m a band: the stripes
+  // a mower actually leaves, at a scale a small frame can hold.
+  for (let d = -hl - 10; d < hl + 10; d += 15, band += 1) {
     const a = projectClamped(v, isl.x - hw - 8, y, isl.z + d);
     const b = projectClamped(v, isl.x + hw + 8, y, isl.z + d);
-    const c = projectClamped(v, isl.x + hw + 8, y, isl.z + d + 12);
-    const e = projectClamped(v, isl.x - hw - 8, y, isl.z + d + 12);
+    const c = projectClamped(v, isl.x + hw + 8, y, isl.z + d + 15);
+    const e = projectClamped(v, isl.x - hw - 8, y, isl.z + d + 15);
     ctx.fillStyle = band % 2 === 0
-      ? hexA(toneLand('#55855e', '#263f2e'), 0.55)
-      : hexA(toneLand('#487a54', '#203a29'), 0.55);
+      ? hexA(toneLand('#639468', '#2c4a34'), 0.72)
+      : hexA(toneLand('#3c6e4a', '#1e3626'), 0.72);
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
@@ -1400,7 +1480,10 @@ function drawApron(ctx, v, isl, toneLand) {
   const tx0 = isl.x + hw + 0.5;
   const tx1 = isl.x + hw + 14;
   const tz = isl.z + 21;
-  for (const [tw, ta] of [[5.4, 0.22], [3.2, 0.45]]) {
+  // Wider and stronger in V10: at 5.4/3.2 m and 0.22/0.45 the track
+  // never read in the delivery frame at all — the depot still
+  // floated on grass (V10 audit problem 3).
+  for (const [tw, ta] of [[6.6, 0.30], [4.0, 0.55]]) {
     const a = project(v, tx0, ty, tz - tw / 2);
     const b = project(v, tx1, ty, tz - tw / 2);
     const c = project(v, tx1, ty, tz + tw / 2);
@@ -1440,7 +1523,16 @@ function drawStrip(ctx, v, isl, t, world) {
   // its hazed, darkened island as a pale patch instead of lying in
   // it. The surface mixes toward a hazed mauve-grey as the markings
   // fade, by the same factor.
-  const surfCol = mixc('#5d5648', '#565064', (1 - markFade) * 0.9);
+  // V10: the surface gets its OWN range curve. Keyed to markFade it
+  // mixed by (1 − markFade) × 0.9, and markFade at the storm frame's
+  // 715 m is ≈ 0.81 — a 0.17 mix, a whisper — so Cahaya's strip was
+  // still the brightest ground mark in a frame full of weather
+  // (V10 audit problem 4). The surface's curve bites at the ranges
+  // the sheet actually shows: nothing below 250 m (the delivery and
+  // approach strips stay honest asphalt), half-mixed by ~700 m,
+  // capped at 0.6 so a far strip still reads as a strip.
+  const surfMix = clamp((stripFwd - 250) / 900, 0, 0.6);
+  const surfCol = mixc('#5d5648', '#565064', surfMix);
   // The surface in slices along its length, so it draws whole even with the camera
   // parked on it — a single four-corner quad would vanish the moment a corner
   // slipped behind the lens.
@@ -1601,7 +1693,7 @@ function drawPalm(ctx, v, x, y, z, s) {
   const leanH = Math.sin(x * 12.9898 + z * 0.371) * 43758.5453;
   const tipOff = h * (0.18 + (leanH - Math.floor(leanH)) * 0.24);
   ctx.strokeStyle = '#3a2c20';
-  ctx.lineWidth = Math.max(1, base.s * (base.s > 2 ? 0.16 : 0.1));
+  ctx.lineWidth = Math.max(1, base.s * (base.s > 2 ? 0.19 : 0.1));
   ctx.beginPath();
   ctx.moveTo(base.x, base.y);
   ctx.quadraticCurveTo(base.x + tipOff * 0.45, base.y - h * 0.6, base.x + tipOff, base.y - h);
@@ -1609,30 +1701,36 @@ function drawPalm(ctx, v, x, y, z, s) {
   const tx = base.x + tipOff;
   const ty = base.y - h;
   // A crown body under the fronds: seven hairline arcs on a stick read
-  // as a spider wherever the fronds are thin — and the old gate
-  // (base.s < 2.5) gave the mass only to the far palms, while the
-  // mid-range palms that dominate a ground-level frame (the delivery
-  // frame's own island, s ≈ 3–4, fronds at the 1 px floor) got bare
-  // strokes and read as dead trees. The crown now draws at every
-  // range short of a palm looming large in frame, its alpha easing
-  // down as the fronds gain real width of their own: a firm mass at
-  // scratch range, a shadow under full fronds up close.
-  if (base.s < 5.5) {
+  // as a spider wherever the fronds are thin, so a firm mass stands
+  // under them — a shadow the fronds fall from.
+  // V10: the crown draws at EVERY range short of a palm looming
+  // into the lens. The old gate (base.s < 5.5) withheld it from
+  // exactly the palms that dominate a ground-level frame — the
+  // delivery island's own palms project at s ≈ 8–20 — on the theory
+  // that their fronds gain real width up close; at s × 0.085 the
+  // fronds were 1–1.7 px hairlines there, so those palms stood as
+  // bare trunks with spiders on top: bent wire (V10 audit problem
+  // 6). The alpha now eases continuously with scale instead of
+  // switching off, the ellipse flattens, and the fronds below carry
+  // more weight and droop lower (problem 7: arcs ending at +0.24h
+  // over a 0.20h-deep dome read as a parasol; fronds that fall to
+  // +0.34h read as a palm).
+  if (base.s < 30) {
     ctx.save();
-    ctx.globalAlpha = clamp(1.05 - base.s * 0.13, 0.35, 1);
+    ctx.globalAlpha = clamp(1.02 - base.s * 0.07, 0.32, 0.8);
     ctx.fillStyle = '#2c5a3c';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.05, h * 0.42, h * 0.2, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.05, h * 0.44, h * 0.17, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
   ctx.strokeStyle = '#2f6b46';
-  ctx.lineWidth = Math.max(1, base.s * 0.085);
+  ctx.lineWidth = Math.max(1.1, base.s * 0.11);
   for (let i = 0; i < 7; i += 1) {
     const a = Math.PI * (0.05 + i * 0.155);
     ctx.beginPath();
     ctx.moveTo(tx, ty);
-    ctx.quadraticCurveTo(tx + Math.cos(a) * h * 0.5, ty - Math.sin(a) * h * 0.34, tx + Math.cos(a) * h * 0.72, ty + h * 0.24);
+    ctx.quadraticCurveTo(tx + Math.cos(a) * h * 0.5, ty - Math.sin(a) * h * 0.30, tx + Math.cos(a) * h * 0.72, ty + h * 0.34);
     ctx.stroke();
   }
 }
