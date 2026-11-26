@@ -184,7 +184,7 @@ function drawSea(ctx, v, plane, light) {
   }
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(220,245,245,0.35)';
-  for (let i = 0; i < 110; i += 1) {
+  for (let i = 0; i < 160; i += 1) {
     // Hashed placement, not modular: the old steps — (i × 613.7) %
     // 1500 in z, (i × 389.3) % 900 in x — are two arithmetic
     // progressions, and their points lie on lattice runs however
@@ -192,7 +192,7 @@ function drawSea(ctx, v, plane, light) {
     // run aligned into a dotted column descending the water, a
     // marker line instead of light (V10 audit problem 10). A
     // sin-hash of the index (the pattern this file uses for grain
-    // and jitter everywhere else) scatters the same 110 dashes over
+    // and jitter everywhere else) scatters the same 160 dashes over
     // the same ranges with no runs left to align.
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77) * 43758.5453;
@@ -213,34 +213,53 @@ function drawSea(ctx, v, plane, light) {
     // V12: the floor was 0.05 — at the storm camera the open sea is
     // far water and the sparkle vanished into it, and the cover's
     // sea left of the glitter column was one flat field (V12 audit
-    // problems 3 and 8). The floor is 0.10 now and the count is 110:
+    // problems 3 and 8). The floor is 0.12 now and the count is 160:
     // the sea keeps some light everywhere without the glitter
-    // column coming back.
-    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
+    // column coming back. (V14: the field was thin at mid-range —
+    // one dash per ~14,000 m² at 800–2000 m, so the open sea
+    // between the islands read as a flat gradient — V14 audit
+    // problem 6. Count 110 → 160, floor 0.10 → 0.12.)
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.12, 0.4);
     ctx.fillRect(p.x - len / 2, p.y, len, Math.max(1, p.s * 0.012));
   }
-  // V13 rev: the first attempt (field to plane.z − 160) added nothing
-  // visible — the water at the frame's bottom sits 250–450 m ahead
-  // of the plane, not behind it, so backward dashes project below
-  // the frame's bottom edge (proven by projection: y 800 needs
-  // fwd 249). The corners are flat because the field is thin there,
-  // not because it starts too late. A small dedicated near-water
-  // pass puts dashes where the bottom band actually is (fwd
-  // 240–460), gated to that band so no dash lands on the strip or
-  // under the frame; the sea draws before the islands, so a dash
-  // under land is covered.
-  for (let i = 0; i < 24; i += 1) {
+  // A small dedicated near-water pass puts dashes where the frame's
+  // bottom band actually is (fwd 100–430, gate 100–500 — the water
+  // at the frame's bottom sits 100–450 m ahead of the plane: y 800
+  // needs fwd 249 from the cover camera, fwd 130 from the low
+  // approach camera, proven by projection), so no dash lands on the
+  // strip or under the frame; the sea draws before the islands, so
+  // a dash under land is covered.
+  // V14 rev (2): the gate stopped at fwd 200, but the approach
+  // frame's bottom band sits at fwd 130–150 — inside the gate, so
+  // the approach's bottom-right sea stayed flat (V14 audit problem
+  // 10, measured: 2 px >12). Gate 200 → 100. The cover and storm
+  // cameras sit higher, so fwd 100–200 projects below their frames
+  // and this changes nothing there; the approach strip's near
+  // threshold is at fwd 213, so no dash lands on it.
+  // V14: 24 dashes over a 900 m-wide band put ~4 visible specks in
+  // the bottom band — the corners stay flat (V14 audit problem 1).
+  // Count 24 → 90 in the same band: density in the band the bottom
+  // actually is, not a wider field.
+  // V14 rev: 90 dashes still read as nothing — measured on the
+  // first render, the pass put ~12 visible specks in the whole
+  // bottom band, each 2×1 px: the length formula clamps at 2 px
+  // (p.s ≈ 3.5 at fwd 300, so p.s × 0.09 never clears the floor)
+  // and the ±450 m spread wastes ~60% of the dashes off-frame.
+  // The dashes are bigger now (6 px floor, 2 px tall), the spread
+  // narrower (±350 m), the count 140 — visible light on the water,
+  // still short dashes, not a glitter column.
+  for (let i = 0; i < 140; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 3.1) * 43758.5453;
       return h - Math.floor(h);
     };
-    const wz = plane.z + 210 + hash(1) * 220;
-    const wx = plane.x + hash(2) * 900 - 450 + Math.sin(i * 91.7) * 70;
+    const wz = plane.z + 100 + hash(1) * 330;
+    const wx = plane.x + hash(2) * 700 - 350 + Math.sin(i * 91.7) * 70;
     const p = project(v, wx, 0, wz + hash(3) * 60);
-    if (!p || p.y < v.horizon || p.fwd < 200 || p.fwd > 500) continue;
-    const len = clamp(p.s * 0.09, 2, 26);
+    if (!p || p.y < v.horizon || p.fwd < 100 || p.fwd > 500) continue;
+    const len = clamp(p.s * 0.35, 6, 30);
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
-    ctx.fillRect(p.x - len / 2, p.y, len, Math.max(1, p.s * 0.012));
+    ctx.fillRect(p.x - len / 2, p.y, len, Math.max(2, p.s * 0.04));
   }
   ctx.globalAlpha = 1;
 }
@@ -391,8 +410,12 @@ function drawSquall(ctx, v, sq, t) {
   // meeting.
   for (const cl of clusters) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
-    grad.addColorStop(0, 'rgba(168,182,205,0.23)');
-    grad.addColorStop(1, 'rgba(168,182,205,0.05)');
+    // V14: the curtain topped out at 0.23 and faded to 0.05, so at
+    // the cover's 2.4 km it was a rumour the eye could not hold
+    // against the bright horizon (V14 audit problem 9). 0.30 → 0.08
+    // now — still a rumour, not a smear.
+    grad.addColorStop(0, 'rgba(168,182,205,0.30)');
+    grad.addColorStop(1, 'rgba(168,182,205,0.08)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(base.x + (cl.c - 0.25) * halfW, baseY);
@@ -583,20 +606,27 @@ function drawStorm(ctx, v, storm, t) {
   // problem 5, proven by projection: cell seaY 646, R 869). The
   // ring now reaches fz ±2.2, down to the frame's bottom edge, with
   // more dashes to hold the density; alpha stays capped at 0.07.
-  // V13 rev: the first pass measured ~13 changed px in the
-  // bottom-right quarter — the far band is wide and most dashes
-  // fall off-frame, so 70 dashes read as nothing down there.
-  // Count 70 → 120 and the cap 0.07 → 0.09: the bottom band
-  // carries visible rain now, still faint enough to stay texture.
-  for (let i = 0; i < 120; i += 1) {
-    const fx = (grain(i, 81) * 2 - 1) * 2.4;
+  // V14: the ring wastes most of its dashes off-frame — fx ±2.4R
+  // around cx 477 spans px −1608…+2562 while the frame is 0–1280,
+  // and only fz 1.6–2.2 of the ±2.2 range covers the bottom band
+  // (V14 audit problem 2). Count 120 → 240 and the sample biased
+  // into the frame (fx ±1.3); fz ±2.2 and the annulus test are
+  // unchanged — density where the frame is, not more range.
+  // V14 rev: the cap never bound — the real alpha was
+  // (0.03–0.06) × shaftBoostPre, so the bottom band gained dashes
+  // that changed ~5 levels each and still read as polished water
+  // (measured on the first render: 28 px >8 in the bottom-right
+  // quarter). Base alpha 0.06–0.11 now, cap 0.14: faint rain
+  // streaks, still texture, not weather.
+  for (let i = 0; i < 240; i += 1) {
+    const fx = (grain(i, 81) * 2 - 1) * 1.3;
     const fz = (grain(i, 82) * 2 - 1) * 2.2;
     const d2 = fx * fx * 0.8 + fz * fz;
     if (d2 < 1.15 || d2 > 9.4) continue;
     const px = cx + fx * R;
     const py = seaY + fz * R * 0.085;
     const len = R * (0.015 + grain(i, 83) * 0.025);
-    ctx.globalAlpha = Math.min(0.09, (0.03 + grain(i, 84) * 0.03) * shaftBoostPre);
+    ctx.globalAlpha = Math.min(0.14, (0.06 + grain(i, 84) * 0.05) * shaftBoostPre);
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + len * 0.35, py + len);
@@ -814,13 +844,17 @@ function drawStorm(ctx, v, storm, t) {
     const fx = -1.1 + (i / 15) * 2.0 + (grain(i, 1) - 0.5) * 0.09;
     const fy = 0.80 + grain(i, 2) * 0.20;
     const fr = 0.10 + grain(i, 3) * 0.07;
-    const lit = i % 3 === 2;
+    // V14: the grain was dark-on-dark (30,26,48 over a 33,29,50
+    // belly) with only 1-in-3 puffs lit, so the storm frame's
+    // top-left shoulder read as a smooth wash (V14 audit problem
+    // 7). Lit puffs are 1-in-2 now, at 0.44.
+    const lit = i % 2 === 0;
     softPuff(
       ctx,
       cx + fx * R,
       baseY - bodySpan * fy,
       fr * R,
-      lit ? 'rgba(122,96,128,0.34)' : 'rgba(30,26,48,0.40)',
+      lit ? 'rgba(122,96,128,0.44)' : 'rgba(30,26,48,0.40)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -833,13 +867,34 @@ function drawStorm(ctx, v, storm, t) {
     const fx = -1.15 + (i / 7) * 1.05 + (grain(i, 11) - 0.5) * 0.08;
     const fy = 0.74 + grain(i, 12) * 0.26;
     const fr = 0.16 + grain(i, 13) * 0.10;
-    const lit = i % 3 === 1;
+    const lit = i % 2 === 0;
     softPuff(
       ctx,
       cx + fx * R,
       baseY - bodySpan * fy,
       fr * R,
-      lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.36)',
+      lit ? 'rgba(122,96,128,0.42)' : 'rgba(30,26,48,0.36)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
+  }
+  // V14 rev: the three grain passes above all sit at fy 0.72–1.0 —
+  // the dome's top, which is off-frame in the storm shot (topY
+  // −223), so the first V14 render changed nothing in the visible
+  // shoulder (measured: 0 changed px in the top-left box). The
+  // shoulder the frame actually shows is fy 0.18–0.56 (screen y
+  // 300–60). This pass grains that band: same western outer-half
+  // geometry, same colours, lit 1-in-2 at 0.42.
+  for (let i = 0; i < 8; i += 1) {
+    const fx = -1.15 + (i / 7) * 1.05 + (grain(i, 91) - 0.5) * 0.08;
+    const fy = 0.25 + grain(i, 92) * 0.35;
+    const fr = 0.16 + grain(i, 93) * 0.10;
+    const lit = i % 2 === 0;
+    softPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      fr * R,
+      lit ? 'rgba(122,96,128,0.42)' : 'rgba(30,26,48,0.36)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -865,13 +920,13 @@ function drawStorm(ctx, v, storm, t) {
     const fx = 0.35 + (i / 4) * 0.65 + (grain(i, 71) - 0.5) * 0.08;
     const fy = 0.72 + grain(i, 72) * 0.23;
     const fr = 0.14 + grain(i, 73) * 0.10;
-    const lit = i % 3 === 1;
+    const lit = i % 2 === 0;
     softPuff(
       ctx,
       cx + fx * R,
       baseY - bodySpan * fy,
       fr * R,
-      lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.36)',
+      lit ? 'rgba(122,96,128,0.42)' : 'rgba(30,26,48,0.36)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -1397,14 +1452,23 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // on the slope and read as dark discs punched in the grass, so a low
   // camera leaves the ridge to the ridge blob and the palms.
   if (centre && centre.s > 0.45 && fwd < 2600 && v.camY - isl.h > 14) {
-    ctx.fillStyle = toneLand('#2c5a3c', '#16281e');
     for (let i = 0; i < 13; i += 1) {
       const a = i * 2.4 + isl.z * 0.01;
       const rr = isl.r * 0.42 * (0.72 + 0.28 * Math.sin(i * 7.3));
       const p = project(v, isl.x + Math.cos(a) * rr, isl.h * 0.98, isl.z + Math.sin(a) * rr);
       if (!p) continue;
+      // V14: the crowns were solid single-tone circles — flat dark
+      // coins punched in the grass (V14 audit problem 4). Each crown
+      // now carries a lit offset top, so it reads as a bush mass
+      // with a sun side instead of a coin.
+      const r = clamp(p.s * (1.6 + (i % 3) * 0.5), 1.5, 9);
+      ctx.fillStyle = toneLand('#2c5a3c', '#16281e');
       ctx.beginPath();
-      ctx.arc(p.x, p.y, clamp(p.s * (1.6 + (i % 3) * 0.5), 1.5, 9), 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = toneLand('#3a6b48', '#1d3524');
+      ctx.beginPath();
+      ctx.arc(p.x - r * 0.3, p.y - r * 0.35, r * 0.55, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -1867,9 +1931,14 @@ function drawStrip(ctx, v, isl, t, world) {
   // largest flat area left in the sheet (V13 audit problem 9).
   // Gated to stripFwd < 650 like the centreline dashes, so they
   // never become sub-pixel clutter at range.
+  // V14: alpha 0.14 left the lines as 1–2 px dips that measure
+  // present but do not read at judge size — the strip stayed a flat
+  // brown wedge (V14 audit problem 5). Alpha 0.14 → 0.22 and the
+  // width a step up (max(2, s×0.20)): visible wear, still not a
+  // second track.
   if (stripFwd < 650) {
-    ctx.strokeStyle = 'rgba(28,24,20,0.14)';
-    ctx.lineWidth = Math.max(1.5, centreP ? centreP.s * 0.15 : 1.5);
+    ctx.strokeStyle = 'rgba(28,24,20,0.22)';
+    ctx.lineWidth = Math.max(2, centreP ? centreP.s * 0.20 : 2);
     for (const side of [-1, 1]) {
       ctx.beginPath();
       let started = false;
@@ -2082,6 +2151,17 @@ function drawPalm(ctx, v, x, y, z, s) {
     ctx.beginPath();
     ctx.ellipse(tx, ty + h * 0.02, h * 0.38, h * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
+    // V14: the crown was still one clean ellipse — the dome was
+    // interior shading, and the top edge read as a disc at close
+    // and mid range (V14 audit problem 3). Two lobes on the crown's
+    // top break the silhouette into a lumpy mass: their tops reach
+    // ty − 0.34h, 0.08h above the base top.
+    ctx.beginPath();
+    ctx.ellipse(tx - h * 0.20, ty - h * 0.14, h * 0.20, h * 0.20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx + h * 0.19, ty - h * 0.14, h * 0.18, h * 0.20, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = '#1e4229';
     ctx.beginPath();
     ctx.ellipse(tx, ty + h * 0.15, h * 0.30, h * 0.12, 0, 0, Math.PI * 2);
@@ -2100,9 +2180,15 @@ function drawPalm(ctx, v, x, y, z, s) {
     const oy = ty - h * 0.02 + ph(i, 42) * h * 0.04;
     const len = h * (0.55 + ph(i, 43) * 0.30);
     const droop = h * (0.22 + ph(i, 44) * 0.20);
+    // V14: every frond peaked below the crown's top edge, so no
+    // frond ever broke the silhouette and the crown read as a disc
+    // (V14 audit problem 3). The three middle fronds arc over the
+    // top now (control factor 0.85, peaks ~ty − 0.32h); the side
+    // fronds keep the old low arc.
+    const arc = (i >= 2 && i <= 4) ? 0.85 : 0.30;
     ctx.beginPath();
     ctx.moveTo(ox, oy);
-    ctx.quadraticCurveTo(ox + Math.cos(a) * len * 0.5, oy - Math.sin(a) * len * 0.30, ox + Math.cos(a) * len, oy + droop);
+    ctx.quadraticCurveTo(ox + Math.cos(a) * len * 0.5, oy - Math.sin(a) * len * arc, ox + Math.cos(a) * len, oy + droop);
     ctx.stroke();
   }
 }
@@ -2132,7 +2218,10 @@ function drawLighthouse(ctx, v, isl, t) {
   ctx.fillRect(base.x - Wd * 0.3, lampY - 2 * base.s, Wd * 0.6, 3.4 * base.s);
   const beamA = t * 0.7;
   ctx.save();
-  ctx.globalAlpha = 0.09 + 0.05 * Math.sin(t * 2.2);
+  // V14: the beam ran at alpha 0.09 — invisible at dusk, so the
+  // lighthouse threw no light (V14 audit problem 8). 0.16 base now:
+  // a faint fan at last light, not a searchlight.
+  ctx.globalAlpha = 0.16 + 0.06 * Math.sin(t * 2.2);
   ctx.fillStyle = '#ffe9a8';
   ctx.beginPath();
   ctx.moveTo(base.x, lampY);
