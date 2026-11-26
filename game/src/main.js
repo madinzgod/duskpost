@@ -10,6 +10,7 @@ import { createMissions, missionTarget } from './missions.js';
 import { createSound } from './sound.js';
 import { makeView, drawScene, project, VIEW_W, VIEW_H } from './render.js';
 import { drawInstruments } from './instruments.js';
+import { drawRouteMap } from './debrief.js';
 import { stageShot } from './shots.js';
 
 const canvas = document.getElementById('game');
@@ -68,7 +69,7 @@ if (shotName) {
   plane = staged.plane;
   missions = staged.missions;
   game = staged.game;
-  const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4, storm: 2.93, rescue: 0.71 }[shotName] ?? 1;
+  const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4, storm: 2.93, rescue: 0.71, map: 1.5 }[shotName] ?? 1;
   game.time = frozenT;
   world.setTime(frozenT); // the squall stands where the frozen clock puts it
   render(frozenT);
@@ -214,7 +215,9 @@ function render(t) {
   };
   const view = makeView(plane, shake);
   drawScene(ctx, view, world, plane, fx, game, t);
-  if (game.screen === 'play' || shotName) {
+  // The debrief never shows the flight HUD: the map panel is the screen,
+  // and the beacon pillar and instrument panel would sit on top of it.
+  if ((game.screen === 'play' || shotName) && game.screen !== 'over') {
     drawBeacon(ctx, view, t);
     drawInstruments(ctx, VIEW_W, VIEW_H, plane, game, world, t);
   }
@@ -237,20 +240,36 @@ function drawBeacon(ctx, view, t) {
   // silhouette a few dozen tall, attached to nothing the eye could
   // follow. Near targets keep a tall pillar; far names hug their islands.
   const pillarH = clamp(base.s * 34, 40, 200);
-  const grad = ctx.createLinearGradient(0, base.y - pillarH, 0, base.y);
-  grad.addColorStop(0, 'rgba(255,196,107,0)');
-  grad.addColorStop(1, `rgba(255,196,107,${0.4 * pulse})`);
-  ctx.fillStyle = grad;
   // The pillar is a real thing in the world — about 6 m of light — so its
   // width comes from the projection like everything else: a fixed ~3 px at
   // every range made it invisible and left the name label floating alone.
   const wdt = clamp(base.s * 6, 2, 30);
-  ctx.fillRect(base.x - wdt / 2, base.y - pillarH, wdt, pillarH);
-  ctx.strokeStyle = `rgba(255,196,107,${0.75 * pulse})`;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.ellipse(base.x, base.y, wdt * 1.5, wdt * 0.5, 0, 0, Math.PI * 2);
-  ctx.stroke();
+  // The pillar fades vertically AND sideways: one fillRect with a vertical
+  // gradient only left hard side edges — a light-beam, not a beacon (V21
+  // audit problem 8). A horizontal gradient gives the soft sides; the
+  // vertical fade is applied band by band.
+  const side = ctx.createLinearGradient(base.x - wdt / 2, 0, base.x + wdt / 2, 0);
+  side.addColorStop(0, 'rgba(255,196,107,0)');
+  side.addColorStop(0.5, `rgba(255,196,107,${0.4 * pulse})`);
+  side.addColorStop(1, 'rgba(255,196,107,0)');
+  ctx.fillStyle = side;
+  const bands = 8;
+  for (let i = 0; i < bands; i += 1) {
+    const f = (i + 0.5) / bands; // 0 at the top, 1 at the base
+    ctx.globalAlpha = 0.12 + 0.88 * f;
+    ctx.fillRect(base.x - wdt / 2, base.y - pillarH + (i * pillarH) / bands, wdt, pillarH / bands + 1);
+  }
+  ctx.globalAlpha = 1;
+  // No ground ring for a rescue: the target IS the boat, and the ring lands
+  // on the hull and reads as a helipad marking on a red deck (V21 audit
+  // problem 6). The flare marks the boat already.
+  if (m.kind !== 'rescue') {
+    ctx.strokeStyle = `rgba(255,196,107,${0.75 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(base.x, base.y, wdt * 1.5, wdt * 0.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   if (base.s > 0.35) {
     const fontPx = clamp(base.s * 3, 11, 24);
     ctx.font = `700 ${fontPx}px system-ui, sans-serif`;
@@ -302,26 +321,13 @@ function drawTitle(t) {
 }
 
 function drawOver(t) {
+  // The debrief is the route map now: the day's legs, the archipelago, the
+  // score — drawn from the world and the run's real stats by debrief.js.
+  // The old centred text (score line, stats line) is the map's leg list
+  // and score block instead.
   ctx.fillStyle = 'rgba(8,8,22,0.62)';
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffe9c9';
-  ctx.font = '800 58px system-ui, sans-serif';
-  ctx.fillText(plane.hull <= 0 ? 'SHE WILL NOT FLY AGAIN' : 'LAST LIGHT', VIEW_W / 2, 240);
-  ctx.font = '600 23px system-ui, sans-serif';
-  ctx.fillStyle = '#ffc46b';
-  ctx.fillText(plane.hull <= 0 ? 'The hull gave out over the archipelago.' : 'The run ends with the sun. The post you carried is counted.', VIEW_W / 2, 282);
-  ctx.font = '600 22px ui-monospace, Menlo, monospace';
-  ctx.fillStyle = '#ffe9c9';
-  const s = game.stats;
-  ctx.fillText(`SCORE ${game.score}`, VIEW_W / 2, 348);
-  ctx.font = '500 19px ui-monospace, Menlo, monospace';
-  ctx.fillText(`mail delivered ${s.deliveries} · rings threaded ${s.rings} · rescues ${s.rescues} · hard arrivals ${s.crashes}`, VIEW_W / 2, 386);
-  if (t * 1.4 % 1 < 0.68) {
-    ctx.font = '700 24px system-ui, sans-serif';
-    ctx.fillStyle = '#ffd23e';
-    ctx.fillText('PRESS ENTER — FLY AGAIN', VIEW_W / 2, 462);
-  }
+  drawRouteMap(ctx, world, game, plane, t);
 }
 
 function clamp(v, lo, hi) {

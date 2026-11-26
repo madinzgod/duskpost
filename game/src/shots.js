@@ -9,7 +9,7 @@ import { createPlane } from './flight-physics.js';
 import { createMissions } from './missions.js';
 import { makeView, project } from './render.js';
 
-export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title', 'storm', 'rescue'];
+export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title', 'storm', 'rescue', 'map'];
 
 export function stageShot(name, seed) {
   const world = createWorld(seed);
@@ -195,6 +195,28 @@ export function stageShot(name, seed) {
     game.stats.rescues = 1; // one rescue already done; this is the second
     game.stats.deliveries = 2;
     game.stats.rings = 3;
+  } else if (name === 'map') {
+    // The end-of-run debrief: the route map over the home harbour at last
+    // light. The plane sits on the water where the run started (the map
+    // panel covers her — the backdrop is the harbour at dusk, dimmed);
+    // the stats are a full day's work, and the score is the rows' own sum
+    // (3 mail × 170 + rescue 200 + 5 rings × 25 = 835), so the panel's
+    // list and its score agree. The debrief is a real screen (drawOver),
+    // staged here the same way every other shot stages its screen.
+    const home = world.islands[0];
+    plane.x = home.x - 30;
+    plane.z = home.z - 430;
+    plane.y = 0;
+    plane.hdg = 0.12;
+    plane.speed = 0;
+    plane.throttle = 0;
+    plane.onWater = true;
+    plane.fuel = 41;
+    game.screen = 'over';
+    game.score = 835;
+    game.lightFrac = 0.25;
+    game.light = 60;
+    game.stats = { rings: 5, deliveries: 3, rescues: 1, crashes: 0 };
   } else {
     // cover: WATER TAKEOFF south of Cahaya — on the step, spray flying,
     // the next ring low over the water ahead-right, Cahaya's strip and

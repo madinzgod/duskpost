@@ -548,6 +548,48 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.14, 0.30);
     ctx.fillRect(p.x - len / 2, p.y, len, Math.max(2, p.s * 0.04));
   }
+  // V21: a near pass for the sea the other passes cannot reach — the
+  // cover's mid sea (V21 audit problem 4). At the water-level cover
+  // camera (camY 8.5, horizon 348) the screen band y430–470 is fwd
+  // 82–122 m, but the near-water pass gates fwd 80–600 over the whole
+  // sea (too thin per box, and faint), the mid-band passes gate fwd
+  // 400–1400 (their whole py window maps to fwd 38–271 here, so the
+  // gate keeps nothing), and the far-band loop keeps only an 11 px
+  // strip under the horizon. This pass samples py from the fwd band
+  // the mid sea actually is — [60, 200] m at the camera, the V17
+  // lesson — full width, the mid-band dash shape (fillStyle alpha 1.0,
+  // globalAlpha 0.14–0.32). Hash-proven before rendering: 160/160 kept
+  // at the cover and rescue cameras (51 of them in y430–470), 128/160
+  // at the delivery camera (the rest fall on the instrument panel and
+  // are rejected; the kept ones land on strip/grass and are covered by
+  // the land, which draws after the sea), and the pass skips itself at
+  // the storm camera, where the band maps above the frame.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  const npPyLo = v.horizon + (v.camY * v.focal) / 200;
+  const npPyHi = Math.min(v.horizon + (v.camY * v.focal) / 60, 796);
+  if (npPyLo < 796) {
+    for (let i = 0; i < 160; i += 1) {
+      const hash = (salt) => {
+        const h = Math.sin(i * 12.9898 + salt * 7.77 + 41.7) * 43758.5453;
+        return h - Math.floor(h);
+      };
+      const px = 4 + hash(1) * 1272;
+      const py = npPyLo + hash(2) * (npPyHi - npPyLo);
+      if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+      if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+      const s = (py - v.horizon) / v.camY;
+      const fwd = v.focal / s;
+      if (fwd < 60 || fwd > 200) continue;
+      const right = (px - VIEW_W / 2) / s;
+      const wx = v.camX + fwd * v.sinH + right * v.cosH;
+      const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+      const p = project(v, wx, 0, wz);
+      if (!p) continue;
+      const len = clamp(p.s * 0.35, 6, 14);
+      ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.14, 0.32);
+      ctx.fillRect(p.x - len / 2, p.y, len, 2);
+    }
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -2958,23 +3000,52 @@ function drawBoat(ctx, v, b, t) {
     return;
   }
   // Wake — only once the boat is big enough for a wake to read as one.
+  // Two strokes per arm (a wide faint one under a narrow brighter one):
+  // one 1 px line per arm read as a scratch, not a wake (V21 audit
+  // problem 9). A soft foam pool under the hull grounds her on the water.
   if (p.s > 0.55) {
-    ctx.strokeStyle = 'rgba(230,248,248,0.4)';
-    ctx.lineWidth = Math.max(1, p.s * 0.08);
+    const wakeArm = (x0, y0, x1, y1) => {
+      ctx.strokeStyle = 'rgba(230,248,248,0.16)';
+      ctx.lineWidth = Math.max(2, p.s * 0.22);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(230,248,248,0.4)';
+      ctx.lineWidth = Math.max(1, p.s * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    };
+    wakeArm(p.x - w * 0.5, p.y, p.x - w * 1.5, p.y + h * 0.8 + Math.sin(t * 2 + b.z) * 1.4);
+    wakeArm(p.x + w * 0.5, p.y, p.x + w * 1.3, p.y + h * 0.7);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(1, 0.3);
+    const foam = ctx.createRadialGradient(0, 0, 2, 0, 0, w * 0.62);
+    foam.addColorStop(0, 'rgba(230,248,248,0.20)');
+    foam.addColorStop(1, 'rgba(230,248,248,0)');
+    ctx.fillStyle = foam;
     ctx.beginPath();
-    ctx.moveTo(p.x - w * 0.5, p.y);
-    ctx.lineTo(p.x - w * 1.5, p.y + h * 0.8 + Math.sin(t * 2 + b.z) * 1.4);
-    ctx.moveTo(p.x + w * 0.5, p.y);
-    ctx.lineTo(p.x + w * 1.3, p.y + h * 0.7);
-    ctx.stroke();
+    ctx.arc(0, 0, w * 0.62, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
-  // Hull and cabin.
+  // Hull and cabin. The bow is a real point in the world — the heading's
+  // end, projected — so the hull is a boat with a front, not a symmetric
+  // trapezoid (V21 audit problem 6: the trapezoid, with the beacon's
+  // ground ring sitting on it, read as a landing pad). The stern stays
+  // square; the bow comes to a soft point on the heading's side.
+  const bow = project(v, b.x + Math.sin(b.hdg) * 8, 0, b.z + Math.cos(b.hdg) * 8);
+  const bowSign = bow && Math.abs(bow.x - p.x) > 1 ? Math.sign(bow.x - p.x) : 1;
   ctx.fillStyle = b.hue;
   ctx.beginPath();
-  ctx.moveTo(p.x - w / 2, p.y - h * 0.5);
-  ctx.lineTo(p.x + w / 2, p.y - h * 0.5);
-  ctx.lineTo(p.x + w * 0.34, p.y + h * 0.5);
-  ctx.lineTo(p.x - w * 0.34, p.y + h * 0.5);
+  ctx.moveTo(p.x - bowSign * w * 0.5, p.y - h * 0.5);
+  ctx.lineTo(p.x + bowSign * w * 0.42, p.y - h * 0.5);
+  ctx.lineTo(p.x + bowSign * w * 0.62, p.y + h * 0.05);
+  ctx.lineTo(p.x + bowSign * w * 0.30, p.y + h * 0.5);
+  ctx.lineTo(p.x - bowSign * w * 0.34, p.y + h * 0.5);
   ctx.closePath();
   ctx.fill();
   // A dark waterline along the hull's bottom edge, so the hull reads as
@@ -2983,13 +3054,13 @@ function drawBoat(ctx, v, b, t) {
   ctx.strokeStyle = 'rgba(20,30,34,0.55)';
   ctx.lineWidth = Math.max(1, p.s * 0.14);
   ctx.beginPath();
-  ctx.moveTo(p.x - w * 0.36, p.y + h * 0.42);
-  ctx.lineTo(p.x + w * 0.36, p.y + h * 0.42);
+  ctx.moveTo(p.x - bowSign * w * 0.32, p.y + h * 0.42);
+  ctx.lineTo(p.x + bowSign * w * 0.28, p.y + h * 0.42);
   ctx.stroke();
   ctx.fillStyle = '#f3ead8';
-  ctx.fillRect(p.x - w * 0.16, p.y - h * 1.25, w * 0.34, h * 0.75);
+  ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.16, p.y - h * 1.25, w * 0.34, h * 0.75);
   ctx.fillStyle = '#22333a';
-  ctx.fillRect(p.x - w * 0.1, p.y - h * 1.12, w * 0.22, h * 0.3);
+  ctx.fillRect(p.x - bowSign * w * 0.05 - w * 0.1, p.y - h * 1.12, w * 0.22, h * 0.3);
   if (b.rescue) {
     // Flare: a rising orange star and its smoke, impossible to miss at dusk.
     const flicker = 0.75 + 0.25 * Math.sin(t * 11);
@@ -3002,12 +3073,13 @@ function drawBoat(ctx, v, b, t) {
     ctx.beginPath();
     ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.3), 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(60,50,48,0.4)';
+    // Smoke: soft puffs, not flat discs — the flat arcs read as stacked
+    // dark coins above the flare (V21 audit problem 7). softPuff's
+    // gradient has no hard edge anywhere.
     for (let i = 0; i < 4; i += 1) {
       const ph = (t * 0.22 + i / 4) % 1;
-      ctx.beginPath();
-      ctx.arc(p.x + ph * w * 0.5, p.y - h * 2.8 - ph * h * 3.4, (2 + ph * 7) * p.s * 0.4, 0, Math.PI * 2);
-      ctx.fill();
+      softPuff(ctx, p.x + ph * w * 0.5, p.y - h * 2.8 - ph * h * 3.4,
+        (2 + ph * 7) * p.s * 0.4, 'rgba(60,50,48,0.34)', 'rgba(60,50,48,0)', 0.9);
     }
   }
 }
