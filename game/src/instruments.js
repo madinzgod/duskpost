@@ -9,8 +9,9 @@ const CREAM = '#ffe9c9';
 const PANEL = 'rgba(12,20,30,0.82)';
 
 export function drawInstruments(ctx, W, H, plane, game, world, t) {
-  drawReadout(ctx, plane);
+  drawReadout(ctx, plane, world);
   drawCompass(ctx, W, plane);
+  drawObjective(ctx, W, plane, game);
   drawScoreAndMission(ctx, W, plane, game);
   drawMeters(ctx, H, plane, game, t);
   drawPanel(ctx, W, H, plane);
@@ -18,24 +19,63 @@ export function drawInstruments(ctx, W, H, plane, game, world, t) {
   drawWarnings(ctx, W, H, plane, game, t);
 }
 
-function drawReadout(ctx, plane) {
+function drawReadout(ctx, plane, world) {
   ctx.save();
+  // A translucent panel behind the block, so the cream figures hold against a
+  // bright horizon band instead of washing into the sky.
+  ctx.fillStyle = 'rgba(10,16,26,0.55)';
+  roundRect(ctx, 14, 14, 302, 232, 10);
+  ctx.fill();
   ctx.shadowColor = 'rgba(255,160,60,0.65)';
   ctx.shadowBlur = 12;
   ctx.fillStyle = CREAM;
-  ctx.font = '700 31px ui-monospace, Menlo, monospace';
+  ctx.font = '700 33px ui-monospace, Menlo, monospace';
   ctx.textAlign = 'left';
   const alt = Math.max(0, Math.round(plane.y * 3.281));
   const spd = Math.round(plane.speed * 1.944);
-  ctx.fillText(`ALT ${fmt(alt)} FT`, 26, 52);
-  ctx.fillText(`SPD ${spd} KT`, 26, 92);
-  ctx.fillText(`HDG ${headingText(plane.hdg)}`, 26, 132);
+  ctx.fillText(`ALT ${fmt(alt)} FT`, 26, 54);
+  ctx.fillText(`SPD ${spd} KT`, 26, 95);
+  ctx.fillText(`HDG ${headingText(plane.hdg)}`, 26, 136);
   ctx.shadowBlur = 0;
-  ctx.fillStyle = 'rgba(255,233,201,0.75)';
-  ctx.font = '600 15px ui-monospace, Menlo, monospace';
+  ctx.fillStyle = 'rgba(255,233,201,0.8)';
+  ctx.font = '600 17px ui-monospace, Menlo, monospace';
   const vs = Math.round(plane.vy * 196.85);
-  ctx.fillText(`V/S ${vs >= 0 ? '+' : ''}${vs} FPM`, 26, 158);
-  ctx.fillText(plane.airborne ? 'AIRBORNE' : plane.onStrip ? `ON STRIP — ${plane.onStrip.name}` : 'ON THE WATER', 26, 182);
+  ctx.fillText(`V/S ${vs >= 0 ? '+' : ''}${vs} FPM`, 26, 164);
+  ctx.fillText(plane.airborne ? 'AIRBORNE' : plane.onStrip ? `ON STRIP — ${plane.onStrip.name}` : 'ON THE WATER', 26, 188);
+  // The evening's wind, read at the plane's own stretch of the course: the
+  // direction it blows FROM and its strength — the same air the physics flies.
+  if (world && world.windAt) {
+    const w = world.windAt(plane.z);
+    const fromDeg = ((w.dir * 180 / Math.PI) + 180) % 360;
+    ctx.fillText(`WIND ${String(Math.round(fromDeg)).padStart(3, '0')}° / ${Math.round(w.speed * 1.944)} KT`, 26, 212);
+  }
+  // The load: mail aboard is weight the wing knows about, not just a label.
+  ctx.fillStyle = plane.cargoKg > 0 ? AMBER : 'rgba(255,233,201,0.55)';
+  ctx.fillText(plane.cargoKg > 0 ? `CARGO ${plane.cargoKg} KG — MAIL` : 'CARGO — EMPTY', 26, 236);
+  ctx.restore();
+}
+
+/** The persistent objective line: one always-on chip under the compass saying
+ *  what the run is doing and how far it is — it never vanishes like a banner. */
+function drawObjective(ctx, W, plane, game) {
+  const m = game.mission;
+  if (!m || game.screen !== 'play') return;
+  const dist = Math.round(Math.hypot(m.targetX - plane.x, m.targetZ - plane.z));
+  let text;
+  if (m.kind === 'mail') text = `DELIVER MAIL → ${m.island ? m.island.name : ''} · ${dist} M`;
+  else if (m.kind === 'rings') text = `THREAD THE RINGS — ${m.got || 0} OF ${m.need || 4} · NEXT ${dist} M`;
+  else text = `RESCUE — SET DOWN BY THE FLARE · ${dist} M`;
+  ctx.save();
+  ctx.font = '700 16px system-ui, sans-serif';
+  const w = ctx.measureText(text).width + 34;
+  const x = W / 2 - w / 2;
+  ctx.fillStyle = PANEL;
+  roundRect(ctx, x, 62, w, 32, 8);
+  ctx.fill();
+  ctx.fillStyle = AMBER;
+  ctx.fillRect(x + 10, 71, 4, 14);
+  ctx.textAlign = 'left';
+  ctx.fillText(text, x + 22, 84);
   ctx.restore();
 }
 
@@ -126,7 +166,7 @@ function bar(ctx, x, y, w, h, frac, color, label) {
 }
 
 function drawPanel(ctx, W, H, plane) {
-  const pw = 472;
+  const pw = 548;
   const ph = 148;
   const x = W / 2 - pw / 2;
   const y = H - ph - 14;
@@ -138,11 +178,16 @@ function drawPanel(ctx, W, H, plane) {
   roundRect(ctx, x, y, pw, ph, 14);
   ctx.stroke();
 
-  drawAttitude(ctx, x + 86, y + ph / 2, 58, plane);
-  drawDial(ctx, x + 196, y + ph / 2, 46, plane.y * 3.281 / 2000, 'ALT ×1000', `${(plane.y * 3.281 / 1000).toFixed(1)}`);
-  drawDial(ctx, x + 296, y + ph / 2, 46, plane.speed * 1.944 / 140, 'AIRSPEED', `${Math.round(plane.speed * 1.944)} KT`);
+  drawAttitude(ctx, x + 84, y + ph / 2, 56, plane);
+  drawDial(ctx, x + 192, y + ph / 2, 45, plane.y * 3.281 / 2000, 'ALT ×1000 FT',
+    `${(plane.y * 3.281 / 1000).toFixed(1)}`,
+    [{ f: 0, s: '0' }, { f: 0.25, s: '.5' }, { f: 0.5, s: '1' }, { f: 0.75, s: '1.5' }, { f: 1, s: '2' }]);
+  drawDial(ctx, x + 288, y + ph / 2, 45, plane.speed * 1.944 / 140, 'AIRSPEED KT',
+    `${Math.round(plane.speed * 1.944)}`,
+    [{ f: 0, s: '0' }, { f: 0.25, s: '35' }, { f: 0.5, s: '70' }, { f: 0.75, s: '105' }, { f: 1, s: '140' }]);
+  drawVsiDial(ctx, x + 384, y + ph / 2, 45, plane);
   // Throttle quadrant.
-  const tx = x + 386;
+  const tx = x + 462;
   ctx.fillStyle = 'rgba(255,233,201,0.75)';
   ctx.font = '700 12px system-ui, sans-serif';
   ctx.textAlign = 'center';
@@ -204,7 +249,7 @@ function drawAttitude(ctx, cx, cy, r, plane) {
   ctx.fill();
 }
 
-function drawDial(ctx, cx, cy, r, frac, label, value) {
+function drawDial(ctx, cx, cy, r, frac, label, value, ticks) {
   ctx.fillStyle = 'rgba(6,12,20,0.9)';
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -212,27 +257,70 @@ function drawDial(ctx, cx, cy, r, frac, label, value) {
   ctx.strokeStyle = 'rgba(255,196,107,0.55)';
   ctx.lineWidth = 2;
   ctx.stroke();
+  // Minor ticks, then the numerals a pilot reads the needle against.
   ctx.fillStyle = 'rgba(255,233,201,0.8)';
   for (let i = 0; i <= 10; i += 1) {
     const a = Math.PI * 0.75 + (i / 10) * Math.PI * 1.5;
     ctx.beginPath();
-    ctx.arc(cx + Math.cos(a) * (r - 7), cy + Math.sin(a) * (r - 7), 1.7, 0, Math.PI * 2);
+    ctx.arc(cx + Math.cos(a) * (r - 5), cy + Math.sin(a) * (r - 5), 1.5, 0, Math.PI * 2);
     ctx.fill();
   }
-  const a = Math.PI * 0.75 + clamp(frac, 0, 1) * Math.PI * 1.5;
-  ctx.strokeStyle = '#ffd23e';
-  ctx.lineWidth = 3.4;
-  ctx.beginPath();
-  ctx.moveTo(cx, cy);
-  ctx.lineTo(cx + Math.cos(a) * (r - 11), cy + Math.sin(a) * (r - 11));
-  ctx.stroke();
+  ctx.font = '700 10.5px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'center';
+  for (const tick of ticks) {
+    const a = Math.PI * 0.75 + tick.f * Math.PI * 1.5;
+    ctx.fillText(tick.s, cx + Math.cos(a) * (r - 14), cy + Math.sin(a) * (r - 14) + 3.5);
+  }
+  needle(ctx, cx, cy, Math.PI * 0.75 + clamp(frac, 0, 1) * Math.PI * 1.5, r);
   ctx.fillStyle = CREAM;
   ctx.font = '700 13px ui-monospace, Menlo, monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(value, cx, cy + r * 0.52);
+  ctx.fillText(value, cx, cy + r * 0.42);
   ctx.fillStyle = 'rgba(255,233,201,0.6)';
   ctx.font = '600 9.5px system-ui, sans-serif';
   ctx.fillText(label, cx, cy + r + 13);
+}
+
+/** Vertical-speed dial: zero at the top, climb to the right, sink to the left,
+ *  ±1,500 fpm at the stops — the dial an approach is flown by. */
+function drawVsiDial(ctx, cx, cy, r, plane) {
+  ctx.fillStyle = 'rgba(6,12,20,0.9)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,196,107,0.55)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  const fpm = plane.vy * 196.85;
+  const frac = clamp(fpm / 1500, -1, 1);
+  ctx.font = '700 10.5px ui-monospace, Menlo, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,233,201,0.8)';
+  for (const tick of [{ f: -1, s: '-1.5' }, { f: 0, s: '0' }, { f: 1, s: '+1.5' }]) {
+    const a = -Math.PI / 2 + tick.f * Math.PI * 0.75;
+    ctx.fillText(tick.s, cx + Math.cos(a) * (r - 14), cy + Math.sin(a) * (r - 14) + 3.5);
+  }
+  needle(ctx, cx, cy, -Math.PI / 2 + frac * Math.PI * 0.75, r);
+  ctx.fillStyle = CREAM;
+  ctx.font = '700 13px ui-monospace, Menlo, monospace';
+  ctx.fillText(`${fpm >= 0 ? '+' : ''}${Math.round(fpm / 100)}`, cx, cy + r * 0.42);
+  ctx.fillStyle = 'rgba(255,233,201,0.6)';
+  ctx.font = '600 9.5px system-ui, sans-serif';
+  ctx.fillText('VERT SPEED ×100', cx, cy + r + 13);
+}
+
+/** A needle with a counterweight tail and a hub — drawn thick enough to read. */
+function needle(ctx, cx, cy, a, r) {
+  ctx.strokeStyle = '#ffd23e';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cx - Math.cos(a) * (r * 0.28), cy - Math.sin(a) * (r * 0.28));
+  ctx.lineTo(cx + Math.cos(a) * (r - 10), cy + Math.sin(a) * (r - 10));
+  ctx.stroke();
+  ctx.fillStyle = '#ffd23e';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawApproachGuidance(ctx, W, H, plane, world) {

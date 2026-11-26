@@ -106,6 +106,10 @@ function loop(ts) {
       if (result.banner.startsWith('RESCUE')) game.stats.rescues += 1;
     }
     game.mission = missions.current;
+    // The mail is a load, not a label: while a mail run is current the bag is
+    // aboard (240 kg the wing has to carry); delivery — or any other job —
+    // leaves her empty.
+    plane.cargoKg = missions.current.kind === 'mail' ? 240 : 0;
     // Keep the ring-run card pointed at the next ring.
     const tgt = missionTarget(missions.current, world, plane);
     if (tgt) {

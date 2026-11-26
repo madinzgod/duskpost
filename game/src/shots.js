@@ -30,8 +30,8 @@ export function stageShot(name, seed) {
     // The rotation's first mission is already the Kelapa mail run.
     const isl = world.islands[1];
     plane.x = isl.x + 4;
-    plane.z = isl.z - 330;
-    plane.y = isl.h + 26;
+    plane.z = isl.z - 260;
+    plane.y = isl.h + 21;
     plane.hdg = 0;
     plane.speed = 25;
     plane.throttle = 0.38;
@@ -40,6 +40,7 @@ export function stageShot(name, seed) {
     plane.airborne = true;
     plane.onWater = false;
     plane.fuel = 62;
+    plane.cargoKg = 240; // the Kelapa mail is aboard on this final
     game.score = 475;
     game.lightFrac = 0.55;
     game.light = 132;
@@ -80,11 +81,15 @@ export function stageShot(name, seed) {
   } else {
     // cover: mid-flight, banked toward the next glowing ring, Cahaya's strip and
     // lighthouse ahead, its mail mission on the card — the whole game in one frame.
+    // Staged closer than V1 and a little lower, so the island and its strip fill
+    // more of the frame and the runway reads at a glance instead of as a dash —
+    // but kept above the approach guidance's envelope (it arms below 85 m), so
+    // the cover stays a cruise frame with no landing overlay on it.
     const isl = world.islands[3]; // CAHAYA
-    plane.x = isl.x - 118;
-    plane.z = isl.z - 560;
-    plane.y = 96;
-    plane.hdg = 0.1;
+    plane.x = isl.x - 74;
+    plane.z = isl.z - 430;
+    plane.y = 88;
+    plane.hdg = 0.07;
     plane.speed = 39;
     plane.throttle = 0.68;
     plane.vy = 0.8;
@@ -92,13 +97,14 @@ export function stageShot(name, seed) {
     plane.airborne = true;
     plane.onWater = false;
     plane.fuel = 78;
+    plane.cargoKg = 240; // Cahaya's mail is in the back
     // Rings south of here are already threaded on this run; the next one hangs
     // right in the flight path, big in the frame.
     for (const r of world.rings) if (r.z < plane.z) r.passed = true;
     const ring = world.rings.find((r) => !r.passed && r.z > plane.z) || world.rings[3];
-    ring.x = plane.x + 26;
-    ring.y = 88;
-    ring.z = plane.z + 205;
+    ring.x = plane.x + 16;
+    ring.y = 80;
+    ring.z = plane.z + 175;
     // The card shows this island's run: describe the current mission as Cahaya's.
     missions.current.island = isl;
     missions.current.targetX = isl.x;

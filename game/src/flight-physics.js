@@ -12,6 +12,7 @@ export function createPlane() {
     vy: 0, // m/s climb rate
     fuel: 100, // percent
     hull: 100, // percent
+    cargoKg: 0, // mail aboard, in kg — set by the mission layer; she climbs heavier with it
     airborne: false,
     onWater: true,
     onStrip: null, // island object while parked/rolling on a strip
@@ -26,6 +27,7 @@ const MAX_SPEED = 62;
 /** One physics step. `input` = {pitch, roll, throttleDelta, brake}. Returns event objects. */
 export function stepPlane(p, input, world, dt) {
   const events = [];
+  const stallSpeed = MIN_FLY_SPEED + (p.cargoKg > 0 ? 1.2 : 0);
 
   // Throttle and the speed it drags behind it. No fuel, no thrust: she becomes a glider.
   p.throttle = clamp(p.throttle + input.throttleDelta * dt * 0.55, 0, 1);
@@ -45,22 +47,39 @@ export function stepPlane(p, input, world, dt) {
     p.hdg += input.roll * dt * 0.35 * Math.min(1, p.speed / 10);
   }
 
-  // Forward, always forward.
+  // Forward, always forward — and the air itself moves: aloft, the evening wind
+  // shoves her sideways and along the course, so holding a line is flying, not
+  // pointing. Near the surface the gradient dies away, the way real wind does,
+  // so a landing is judged on the descent, not on the weather.
   const prevZ = p.z;
   const prevX = p.x;
   p.x += Math.sin(p.hdg) * p.speed * dt;
   p.z += Math.cos(p.hdg) * p.speed * dt;
+  if (p.airborne && world.windAt) {
+    const w = world.windAt(p.z);
+    const aloft = clamp((p.y - 4) / 46, 0, 1);
+    p.x += Math.sin(w.dir) * w.speed * aloft * dt;
+    p.z += Math.cos(w.dir) * w.speed * aloft * dt;
+  }
   p.x = clamp(p.x, -1400, 1400);
   if (p.z > 6600) p.z = 6600;
 
   // Climb: the stick pitches her, speed feeds the wing, a stall takes it back.
+  // A full mail bag costs climb and raises the speed the wing lets go at — the
+  // load is flown, not just labelled.
   if (p.airborne) {
-    const lift = clamp(p.speed / MIN_FLY_SPEED, 0, 1.25);
-    const wanted = input.pitch * 10.5 * lift;
-    const stallSink = p.speed < MIN_FLY_SPEED ? (MIN_FLY_SPEED - p.speed) * 0.55 : 0;
+    const lift = clamp(p.speed / stallSpeed, 0, 1.25);
+    const wanted = input.pitch * 10.5 * lift * (p.cargoKg > 0 ? 0.86 : 1);
+    let stallSink = p.speed < stallSpeed ? (stallSpeed - p.speed) * 0.55 : 0;
+    // Ground effect: in the last wingspan of height over a surface the wing
+    // holds her up on the cushion of air underneath — the stall sink falls to
+    // a quarter, which is what floats a gentle arrival in over the shoreline
+    // instead of dropping her onto the slope short of the strip.
+    const surface = Math.max(world.heightAt(p.x, p.z), 0);
+    if (p.y - surface < 14) stallSink *= 0.25;
     p.vy += (wanted - stallSink - p.vy) * Math.min(1, dt * 2.6);
     p.y += p.vy * dt;
-  } else if ((p.onWater || p.onStrip) && p.speed > MIN_FLY_SPEED && input.pitch > 0.25) {
+  } else if ((p.onWater || p.onStrip) && p.speed > stallSpeed && input.pitch > 0.25) {
     p.airborne = true;
     p.onWater = false;
     p.onStrip = null;

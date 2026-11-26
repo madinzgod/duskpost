@@ -85,6 +85,24 @@ export function createWorld(seed) {
     });
   }
 
+  // The evening wind: one seeded flow for the whole run, biased along the course (a
+  // headwind or a tailwind with a crosswise lean, never a full beam gale), breathing
+  // in strength and veering a little as the course runs north. windAt answers for
+  // any point along the course so physics, the windsocks and the HUD all read the
+  // same air.
+  const wind = {
+    dir: rng.range(-0.55, 0.55) + (rng.next() < 0.5 ? 0 : Math.PI), // toward, radians as hdg
+    speed: rng.range(1.7, 2.6), // m/s at full strength, aloft
+    veer: rng.range(0.5, 1.1),
+    gustPhase: rng.range(0, Math.PI * 2),
+  };
+
+  function windAt(z) {
+    const dir = wind.dir + Math.sin(z * 0.0006) * 0.3 * wind.veer;
+    const speed = wind.speed * (0.78 + 0.34 * (0.5 + 0.5 * Math.sin(z * 0.004 + wind.gustPhase)));
+    return { dir, speed };
+  }
+
   /** Height of the island ground at (x, z); 0 over open water. Smooth shoulders, flat top. */
   function heightAt(x, z) {
     let top = 0;
@@ -117,7 +135,7 @@ export function createWorld(seed) {
     return null;
   }
 
-  return { islands, rings, boats, rescueBoat, clouds, heightAt, stripAt, seed };
+  return { islands, rings, boats, rescueBoat, clouds, heightAt, stripAt, seed, wind, windAt };
 }
 
 /** The home harbour island the run starts from. */
