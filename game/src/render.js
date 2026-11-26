@@ -200,8 +200,12 @@ function drawSea(ctx, v, plane, light) {
       const yj = (yjH - Math.floor(yjH) - 0.5) * 8 * row;
       if (lowRow) ctx.fillStyle = 'rgba(255,214,150,0.85)';
       else ctx.fillStyle = 'rgba(255,190,110,0.5)';
+      // V25: the "0.45 floor" scaled with segA, so a low-segA dash in the
+      // y580–600 slice landed at 0.16 alpha, ~90 luminance — below the
+      // eye's hold (71 px >110, V25 audit problem 5). The floor is
+      // absolute now: no dash below y520 falls under 0.45.
       ctx.globalAlpha = lowRow
-        ? Math.max((0.16 + row * 0.4) * 0.85 * segA, 0.45 * segA)
+        ? Math.max((0.16 + row * 0.4) * 0.85 * segA, 0.45)
         : (0.16 + row * 0.4) * 0.85 * segA;
       ctx.fillRect(cxp + off - sw / 2, y + yj, sw, 1.6 + row * 2.2);
     }
@@ -233,7 +237,11 @@ function drawSea(ctx, v, plane, light) {
     const wx = plane.x + hash(2) * 900 - 450 + Math.sin(i * 91.7) * 70;
     const p = project(v, wx, 0, wz + hash(3) * 60);
     if (!p || p.y < v.horizon) continue;
-    const len = clamp(p.s * 0.09, 3.5, 26);
+    // V25: the far dashes were all exactly the 3.5 px floor, so the far
+    // sea read as uniform salt dots at 2× (V25 audit problem 6) — the
+    // V24 variety fix reached the mid-band and deep passes, not this
+    // field. Hashed length variety (×0.6–2.2), same pattern as V24's.
+    const len = clamp(p.s * 0.09, 3.5, 26) * (0.6 + hash(4) * 1.6);
     // V24: the floor was 2 px — at the cover's range the far dashes
     // printed as 2×1 px dots, and the sea read as salt scattered on
     // flat teal at 2× (V24 audit problem 5). 3.5 px reads as a dash.
@@ -413,6 +421,38 @@ function drawSea(ctx, v, plane, light) {
       return h - Math.floor(h);
     };
     const px = 950 + hash(1) * 330;
+    const py = v.horizon + 70 + hash(2) * 40;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 750) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V25: a mirror of pass A for the cover's left sea — mid-left 278 px
+  // >12, far-left 186, against mid-right 612 (V25 audit problem 11):
+  // the same window (py horizon+70…+110) and gate (fwd 80–750) on the
+  // other side. At the delivery camera it lands on the already-textured
+  // left sea (fwd 187–294); at the storm camera the window maps to
+  // fwd 1110–1740, so the gate rejects the pass there.
+  // V25 REVISION: the first render lifted mid-left 278 → 593 but
+  // far-left only 186 → 258 (guard ≥400) — the uniform px sample puts
+  // only a third of its dashes in the narrow far-left strip. The px
+  // sample is left-biased now (u²) and the count 40 → 50, so most
+  // dashes land in the strip that is actually thin.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 50; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 53.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * hash(1) * 446;
     const py = v.horizon + 70 + hash(2) * 40;
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
@@ -1781,7 +1821,13 @@ function drawStorm(ctx, v, storm, t) {
         (nodes[i - 1][1] + ny * 2 + nodes[i + 1][1]) / 4,
       ];
     });
+    // V25: the head still carries a broad bright halo — the profile
+    // through the head falls only 159 → 113 out to ±90 px (V25 audit
+    // problem 10). The first segment's blobs sit on the fire, so
+    // their light pools at the head instead of following the strike:
+    // the first segment's blobs draw at 0.6×, the rest full.
     for (let i = 1; i < smoothNodes.length; i += 1) {
+      const headDim = i === 1 ? 0.6 : 1;
       for (const tt of [0.33, 0.66]) {
         const px = smoothNodes[i - 1][0] + (smoothNodes[i][0] - smoothNodes[i - 1][0]) * tt;
         const py = smoothNodes[i - 1][1] + (smoothNodes[i][1] - smoothNodes[i - 1][1]) * tt;
@@ -1794,8 +1840,8 @@ function drawStorm(ctx, v, storm, t) {
         // it burned at 0.30, so the light read as an orb detached from
         // the channel (V24 audit problem 9). Lifted to 0.10/0.13 so
         // the light continues down the strike.
-        softPuff(ctx, px, py, R * 0.13, `rgba(255,244,200,${0.10 * flash})`, 'rgba(255,244,200,0)');
-        softPuff(ctx, px, py, R * 0.09, `rgba(255,250,220,${0.13 * flash})`, 'rgba(255,250,220,0)');
+        softPuff(ctx, px, py, R * 0.13, `rgba(255,244,200,${0.10 * headDim * flash})`, 'rgba(255,244,200,0)');
+        softPuff(ctx, px, py, R * 0.09, `rgba(255,250,220,${0.13 * headDim * flash})`, 'rgba(255,250,220,0)');
       }
     }
     // V17: the mid pass was 0.07R wide at 0.13 alpha — a 61 px
@@ -2007,17 +2053,14 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     const cxp = p.x + (ox * mir * spreadK + (jit(i, 6) - 0.5) * 0.09 + (jit(i, 9) - 0.5) * 0.30) * w;
     const cyp = p.y + (voy - 0.10 + (jit(i, 7) - 0.5) * 0.06) * w * spread;
     const rr = r * w * 0.38 * (0.86 + jit(i, 8) * 0.3);
-    // V24: far clouds' lit tops (146,84,110) sit barely above their
-    // bellies, so a far cloud in the bright orange sky reads as a
-    // detached dark blob (V24 audit problem 15). For far clouds only,
-    // warm the lit top toward sunset orange and lift its alpha by hz
-    // — near clouds (hz = 0) are unchanged, so the V19 pale-disc
-    // lesson is not re-opened.
+    // V25: the rims still do not model the masses at 2× (V25 audit
+    // problem 12) — the V24 warming was modest. Warmer still and
+    // brighter (alpha 0.45 → 0.52 at full hz), far clouds only.
     const warmK = hz / 0.4;
-    const lr = Math.round(146 + (200 - 146) * warmK);
-    const lg = Math.round(84 + (120 - 84) * warmK);
-    const lb = Math.round(110 + (100 - 110) * warmK);
-    softPuff(ctx, cxp, cyp, rr, `rgba(${lr},${lg},${lb},${0.38 + 0.07 * warmK + jit(i, 5) * 0.18})`, `rgba(${lr},${lg},${lb},0)`, squash);
+    const lr = Math.round(146 + (215 - 146) * warmK);
+    const lg = Math.round(84 + (135 - 84) * warmK);
+    const lb = Math.round(110 + (105 - 110) * warmK);
+    softPuff(ctx, cxp, cyp, rr, `rgba(${lr},${lg},${lb},${0.38 + 0.14 * warmK + jit(i, 5) * 0.18})`, `rgba(${lr},${lg},${lb},0)`, squash);
   });
   if (big) {
     // V12: the lit row sat at p.y − w × spread × 0.34 and spanned
@@ -2299,7 +2342,12 @@ function drawIsland(ctx, v, isl, t, light, world) {
       // The island clip above keeps it off any frame where the
       // rect is not land. 24 samples, same tones and radius as
       // the main pass.
-      for (let i = 0; i < 24; i += 1) {
+      // V25: the box still reads 160 px >12 — the marks shift pixels by
+      // <12 at last light, and 24 samples are too few to carry the
+      // box (V25 audit problem 13). Count 24 → 48 in this pass only;
+      // the main pass is untouched, so the approach grass cannot turn
+      // scratchy.
+      for (let i = 0; i < 48; i += 1) {
         const sx = 980 + sh(i, 61) * 300;
         const sy = 560 + sh(i, 62) * 80;
         let swx = 0, swz = 0, shgt = 0;
@@ -3048,8 +3096,19 @@ function drawPalm(ctx, v, x, y, z, s) {
   // lit cap dominate, and the fronds blend into the crown. Tiny
   // palms get a flatter, wider crown, longer fronds, and no lit cap
   // (the cap is what makes the ball read as a shiny sphere). The
-  // gate keeps the approach island's palms (base.s ~3–5) untouched.
-  const tiny = base.s < 2.5;
+  // gate keeps the approach island's palms (base.s ~3–5) untouched —
+  // except it missed the cover's two prominent palms (base.s
+  // 2.71/2.76, revision changed 0 px there), which V25's sky gate
+  // below finally reaches.
+  // V25: a palm's crown reads as a ball exactly when it stands against
+  // bright sky — the cover camera (camY 8.5) puts CAHAYA's crowns above
+  // the horizon (ty < v.horizon, probe-proven in work/v25/palm2-probe.mjs),
+  // while the approach, storm and delivery cameras put every well-read
+  // palm's crown below it. The sky-silhouette gate is the camera, not
+  // the palm: no size gate separates them (crownW overlaps 13–20 px vs
+  // 13–32 px, base.s overlaps 2.16–3.31 vs 2.74–4.61).
+  const sky = ty < v.horizon;
+  const tiny = base.s < 2.5 || sky;
   ctx.strokeStyle = small ? '#265c3a' : '#2f6b46';
   ctx.lineWidth = Math.max(2.2, base.s * 0.24);
   for (let i = 0; i < 9; i += 1) {
@@ -3093,7 +3152,9 @@ function drawPalm(ctx, v, x, y, z, s) {
     // three small bumps of different sizes and heights (see the
     // V16 rev note below) ridge the top edge instead of two
     // matching lobes.
-    ctx.fillStyle = '#2c5a3c';
+    // V25: a sky-silhouette crown (see the gate above) is darker still —
+    // no pale dome against bright sky, the ball's shine is what read.
+    ctx.fillStyle = sky ? '#234a30' : '#2c5a3c';
     ctx.beginPath();
     ctx.ellipse(tx, ty + h * 0.02, h * (tiny ? 0.38 : 0.30), h * (tiny ? 0.14 : 0.22), 0, 0, Math.PI * 2);
     ctx.fill();
@@ -3214,8 +3275,14 @@ function drawLighthouse(ctx, v, isl, t) {
   // so the beam's lower edge reads as a straight cut (V24 audit
   // problem 13). A fourth, wider, fainter sector feathers the outer
   // edge instead of cutting it.
+  // V25: the widest sector still ended on a hard line at alpha ~0.03,
+  // so the beam's lower edge read as a straight cut (V25 audit problem
+  // 7, measured: a 42-level step at y=410). Two more outer sectors at
+  // frac 0.08 and 0.03 feather the edge into a ramp instead of a step.
   const pulse = 0.16 + 0.06 * Math.sin(t * 2.2);
   for (const [a0, a1, frac] of [
+    [beamA - 0.03, beamA + 0.24, 0.03],
+    [beamA - 0.025, beamA + 0.23, 0.08],
     [beamA - 0.02, beamA + 0.22, 0.18],
     [beamA, beamA + 0.19, 0.38],
     [beamA + 0.03, beamA + 0.16, 0.62],
@@ -3317,6 +3384,17 @@ function drawBoat(ctx, v, b, t) {
   ctx.lineTo(p.x - bowSign * w * 0.34, p.y + h * 0.5);
   ctx.closePath();
   ctx.fill();
+  // V25: the hull was still one flat orange tone between the strake and
+  // the deck edge (V25 audit problem 8) — two bands on a flat field do
+  // not model a boat. A continuous vertical shading gradient over the
+  // hull's own path: a sun side at the top, a water side at the bottom.
+  // The strake, deck edge and waterline below still draw on top.
+  const hullShade = ctx.createLinearGradient(0, p.y - h * 0.5, 0, p.y + h * 0.5);
+  hullShade.addColorStop(0, 'rgba(255,240,220,0.25)');
+  hullShade.addColorStop(0.45, 'rgba(255,240,220,0)');
+  hullShade.addColorStop(1, 'rgba(20,30,34,0.35)');
+  ctx.fillStyle = hullShade;
+  ctx.fill();
   // V23: the hull was one flat tone — a paper cutout at 2× (V23 audit
   // problem 8). A darker strake along the bottom and a lighter deck
   // edge along the top, as translucent overlays so they work in any
@@ -3367,12 +3445,14 @@ function drawBoat(ctx, v, b, t) {
   if (b.rescue) {
     // Flare: a rising orange star and its smoke, impossible to miss at dusk.
     const flicker = 0.75 + 0.25 * Math.sin(t * 11);
-    // V24: the glow's radius (w×0.9) dwarfed its own flare star
-    // (~3.5 px) and read as a second sunset pillar washing through
-    // the boat (V24 audit problem 12). Smaller glow (w×0.55),
-    // bigger star (p.s×0.55) — the source reads, the warmth stays.
-    const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, w * 0.55);
+    // V25: the glow still read as a vertical pillar at judge size —
+    // radius ~96 px with a two-stop gradient, so the mid-tones were
+    // wide (V25 audit problem 9). Smaller radius (w×0.42) with a mid
+    // stop for a steep falloff, and a bigger star, so the source
+    // dominates and the warmth hugs it.
+    const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, w * 0.42);
     glow.addColorStop(0, `rgba(255,120,40,${0.85 * flicker})`);
+    glow.addColorStop(0.45, `rgba(255,120,40,${0.35 * flicker})`);
     glow.addColorStop(1, 'rgba(255,120,40,0)');
     ctx.fillStyle = glow;
     // V23: the rect must contain the gradient circle it fills — the old
@@ -3382,11 +3462,11 @@ function drawBoat(ctx, v, b, t) {
     // A square of side 1.1w centred on the gradient's centre holds
     // it (V24: the radius shrank to w×0.55, so the square shrinks
     // with it — a 2w square would still contain it, but the rect is
-    // the glow's own bounds now).
-    ctx.fillRect(p.x - w * 0.55, p.y - h * 2.6 - w * 0.55, w * 1.1, w * 1.1);
+    // the glow's own bounds now). (V25: radius w×0.42, same rule.)
+    ctx.fillRect(p.x - w * 0.42, p.y - h * 2.6 - w * 0.42, w * 0.84, w * 0.84);
     ctx.fillStyle = '#ffb35c';
     ctx.beginPath();
-    ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.55), 0, Math.PI * 2);
+    ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.7), 0, Math.PI * 2);
     ctx.fill();
     // Smoke: a wisp, not coins — the flat-core softPuffs read as
     // stacked dark discs above the flare (V22 audit problem 4; V21's
@@ -3515,9 +3595,13 @@ function drawSpray(ctx, plane, t) {
     const side = i % 2 === 0 ? -1 : 1;
     const x = cx + side * (16 + ph * 120) + Math.sin(i * 7.3) * 7;
     const y = cy + ph * 26 - Math.sin(ph * Math.PI) * 15;
-    ctx.globalAlpha = (1 - ph) * 0.6 * plane.spray;
+    // V25: the droplets were perfect circles (radius up to 5 px) and
+    // read as a trail of soap bubbles at 2× (V25 audit problem 4).
+    // Thrown water stretches along its flight: short vertical streak
+    // ellipses, smaller, fading faster, so the spray reads as water.
+    ctx.globalAlpha = (1 - ph) * (1 - ph) * 0.6 * plane.spray;
     ctx.beginPath();
-    ctx.arc(x, y, 1.6 + ph * 3.4, 0, Math.PI * 2);
+    ctx.ellipse(x, y, 1.1 + ph * 1.2, 2.2 + ph * 3.6, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;

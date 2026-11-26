@@ -78,6 +78,26 @@ export function drawRouteMap(ctx, world, game, plane, t) {
   ctx.roundRect(96, 148, 1088, 304, 10);
   ctx.clip();
 
+  // V25: the band's lower third is empty sea (V25 audit problem 2) —
+  // the vertical-spread fix is blocked by the storm dot (the spread
+  // probe caps the scale at ~0.30 for only 104 px of spread). A faint
+  // graticule across the band, under the islands, so the empty sea
+  // reads as charted water instead of blank panel.
+  ctx.strokeStyle = 'rgba(191,230,242,0.08)';
+  ctx.lineWidth = 1;
+  for (let gx = 96 + 136; gx < 1184; gx += 136) {
+    ctx.beginPath();
+    ctx.moveTo(gx, 148);
+    ctx.lineTo(gx, 452);
+    ctx.stroke();
+  }
+  for (let gy = 148 + 76; gy < 452; gy += 76) {
+    ctx.beginPath();
+    ctx.moveTo(96, gy);
+    ctx.lineTo(1184, gy);
+    ctx.stroke();
+  }
+
   // Storm cell: a purple shaded circle with a bolt, where the cell stands.
   const st = world.storm;
   const stX = mx(st.z);
@@ -261,13 +281,32 @@ export function drawRouteMap(ctx, world, game, plane, t) {
   ctx.textAlign = 'left';
   ctx.font = '600 24px system-ui, sans-serif';
   if (rows.length === 0) {
+    // V25: the single long line ran past x480 into the legend's FLIGHT
+    // ROUTE sample, which struck through "STAYS ABOARD" — proven by
+    // the live zero-stat light-out shot. Two short lines instead, both
+    // clear of the legend.
     ctx.fillStyle = '#ffe9c9';
-    ctx.fillText('NO MAIL DELIVERED — THE POST STAYS ABOARD', 96, 540);
+    ctx.fillText('NO MAIL DELIVERED', 96, 540);
+    ctx.fillText('THE POST STAYS ABOARD', 96, 574);
   } else {
     rows.forEach((row, i) => {
       ctx.fillStyle = i % 2 === 0 ? '#ffe9c9' : '#ffc46b';
       ctx.fillText(row, 96, 540 + i * 34);
     });
+  }
+
+  // V25: the panel's dead bottom-left (V25 audit problem 2) — the next
+  // leg the day would have flown, from routeLegs' real open leg, in
+  // the list's own style. Nothing invented: the leg, kind and points
+  // are the route's own. Skipped when the panel has no room for it.
+  const nextLeg = legs.find((l) => !l.done);
+  if (nextLeg) {
+    // Zero-stat run: the line sits under the two-line "NO MAIL" block.
+    const nextY = rows.length === 0 ? 608 : 540 + rows.length * 34;
+    if (nextY <= 712) {
+      ctx.fillStyle = 'rgba(255,233,201,0.65)';
+      ctx.fillText(`NEXT: ${nextLeg.name} — ${nextLeg.kind} +${nextLeg.points}`, 96, nextY);
+    }
   }
 
   // V23: a map legend in the middle void — the list sits left, the
