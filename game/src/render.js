@@ -391,6 +391,38 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
     ctx.fillRect(p.x - len / 2, p.y, len, 2);
   }
+  // V19: a targeted far-right mid-band pass — the cover's mid-right
+  // sea is the thinnest sea box in the frame (145 px >12, and its
+  // 950–1100 slice holds only 52 — V19 audit problem 2) because the
+  // main pass and the V17 right-weighted pass both spread over the
+  // whole right third. This pass samples only px 940–1130 with the
+  // same window, gate and dash shape, so that slice gets its own
+  // density instead of the frame's average. Hash-proven at the cover
+  // camera: 27/30 kept, 5 of them inside the (950,430,1100,470)
+  // box; the delivery camera keeps 0 (its fwd gate rejects the
+  // whole window), so the delivery frame is untouched.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 30; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 33.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 940 + hash(1) * 190;
+    const py = v.horizon + 37 + hash(2) * 223;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 400 || fwd > 1400) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
+    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+  }
   // V18: a left-weighted mid-band pass — the mirror of V17's
   // right-weighted one. The cover's far-left sea (px 0–150, py
   // 430–470) is fwd 902–1321 at the cover camera — the mid band —
@@ -576,6 +608,36 @@ function softPuff(ctx, cx, cy, r, inner, outer, squash = 0.72) {
   ctx.restore();
 }
 
+// V19: softPuff's flat core (solid to 0.62r) is exactly the rim the
+// eye finds in the shoulder mottle — three duplicate designs have
+// failed to break it (V19 audit problem 6), and the V16/V17 attack
+// lists name a steep-core puff as the only re-opener. A steep core
+// is solid only to 0.25r, then falls away over a long slope, so
+// there is no circle for the eye to close. Used for the shoulder
+// mottle only; softPuff itself is untouched, so the clouds, the
+// storm body, the squall bank and the flash keep their construction.
+// V19 rev: the first render's swap made the strip smoother (stdev
+// 14.91 → 11.72, bright px 682 → 14) — the steep core's smaller
+// solid area carries less ink per puff. The mottle alphas are
+// lifted a step (visible band 0.42/0.36 → 0.50/0.44, fine mottle
+// 0.30/0.32 → 0.38/0.40, duplicates 0.36/0.38 → 0.44/0.46) to carry
+// the same variance without a rim. If the strip's stdev does not
+// recover toward ~13, the swap reverts to softPuff.
+function steepPuff(ctx, cx, cy, r, inner, outer, squash = 0.72) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(1, squash);
+  const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+  g.addColorStop(0, inner);
+  g.addColorStop(0.25, inner);
+  g.addColorStop(1, outer);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 /** The squall line: a band of weather lying across the course — a long, low
  *  bank of soft puffs stretched wide and flattened where the cell stacks
  *  them into a tower, a rain curtain hanging out of it, the sea shadowed
@@ -735,16 +797,26 @@ function drawSquall(ctx, v, sq, t) {
   // contrast without the curtain gaining a slab. Judged at judge
   // size after the render; if it reads as a solid pale slab, the
   // step reverts to 0.44.
+  // V19: the streaks are a regular comb at 2× — an even fx grid
+  // with one length per streak (V19 audit problem 4). Hashed
+  // jitter on the position (±0.015 halfW) and on the length
+  // (±0.06 of the fall) breaks the barcode; the streaks stay
+  // discrete (≥7 px apart at the cover camera) and in-cluster.
   ctx.strokeStyle = 'rgba(190,200,220,0.48)';
   ctx.lineWidth = Math.max(3.5, s * 0.9);
   const streaks = Math.max(5, Math.floor(halfW / 8));
   for (let i = 0; i < streaks; i += 1) {
-    const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76;
+    const jh = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76 + (jh(71) - 0.5) * 0.03;
     if (!inCluster(fx)) continue; // no streaks in the gaps: the rain breaks with the bank
     const drift = ((t * 0.8 + i * 0.29) % 1) * 0.3;
+    const lenJit = (jh(72) - 0.5) * 0.12;
     ctx.beginPath();
     ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * drift * 0.2);
-    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.82 + drift * 0.25));
+    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.82 + drift * 0.25 + lenJit));
     ctx.stroke();
   }
   // Distance haze for the bank itself: the islands retint toward the
@@ -963,11 +1035,13 @@ function drawStorm(ctx, v, storm, t) {
   // metric. Count 110 → 160 and the alpha lifts (base 0.06–0.11
   // → 0.08–0.14, cap 0.14 → 0.20), so a dash on the dark shadow
   // sea changes its pixels by ~20 levels instead of ~13.
-  // V18: the mid-right sea still reads thin at judge size (61 px
-  // >12 in 17,820 — V18 audit problem 8) while its 2× read is
-  // good. Count 160 → 200, same slant, length and alpha — ~8 more
-  // dashes in the box, no new shape.
-  for (let i = 0; i < 200; i += 1) {
+  // V19: the mid-right sea still reads thin at judge size (78 px
+  // >12 in 17,820 — V19 audit problem 5) while its 2× read is
+  // good: the dashes are thin strokes at alpha 0.08–0.14, so most
+  // of them downsample below the >12 cut. Count 200 → 240 and the
+  // alpha lifts (base 0.08–0.14 → 0.10–0.16, cap 0.20 → 0.24) —
+  // ~25% more contrast per dash, same slant, length and shape.
+  for (let i = 0; i < 240; i += 1) {
     const px = 4 + grain(i, 111) * 1272;
     const py = 560 + grain(i, 112) * 236;
     if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
@@ -977,7 +1051,7 @@ function drawStorm(ctx, v, storm, t) {
     const d2 = fx * fx * 0.8 + fz * fz;
     if (d2 > 9.4) continue;
     const len = R * (0.015 + grain(i, 113) * 0.025);
-    ctx.globalAlpha = Math.min(0.20, (0.08 + grain(i, 114) * 0.06) * shaftBoostPre);
+    ctx.globalAlpha = Math.min(0.24, (0.10 + grain(i, 114) * 0.06) * shaftBoostPre);
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + len * 0.35, py + len);
@@ -1263,12 +1337,12 @@ function drawStorm(ctx, v, storm, t) {
     const fy = 0.25 + grain(i, 92) * 0.35;
     const fr = 0.16 + grain(i, 93) * 0.10;
     const lit = i % 2 === 0;
-    softPuff(
+    steepPuff(
       ctx,
       cx + fx * R,
       baseY - bodySpan * fy,
       fr * R,
-      lit ? 'rgba(122,96,128,0.42)' : 'rgba(30,26,48,0.36)',
+      lit ? 'rgba(122,96,128,0.50)' : 'rgba(30,26,48,0.44)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -1290,12 +1364,12 @@ function drawStorm(ctx, v, storm, t) {
     const fy = 0.25 + grain(i, 102) * 0.40;
     const fr = 0.03 + grain(i, 103) * 0.025;
     const lit = i % 2 === 0;
-    softPuff(
+    steepPuff(
       ctx,
       cx + fx * R,
       baseY - bodySpan * fy,
       Math.max(fr * R, 9),
-      lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.32)',
+      lit ? 'rgba(122,96,128,0.38)' : 'rgba(30,26,48,0.40)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -1325,12 +1399,12 @@ function drawStorm(ctx, v, storm, t) {
     const lit = i % 2 === 0;
     const ang = grain(i, 127) * Math.PI * 2;
     const off = fr * 0.8;
-    softPuff(
+    steepPuff(
       ctx,
       cx + (fx + Math.cos(ang) * off) * R,
       baseY - bodySpan * (fy + Math.sin(ang) * off * 0.72),
       Math.max(fr * R * 0.9, 6),
-      lit ? 'rgba(122,96,128,0.36)' : 'rgba(30,26,48,0.38)',
+      lit ? 'rgba(122,96,128,0.44)' : 'rgba(30,26,48,0.46)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -1672,6 +1746,14 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     );
   }
   if (shaded) return;
+  // V19 rev: the first render's warm lit puffs (255,166,110) printed
+  // as three separate pale discs along the cloud's top — the V12 cap
+  // failure in a new colour (V19 audit problem 1, first render). The
+  // warm branch is REMOVED. The lit-top puffs themselves are the
+  // structure now: smaller (radius 0.5 → 0.38) and spread wider
+  // (±0.15w extra), the V18 core's device, so they read as separate
+  // lit lumps with belly between them instead of merging into one
+  // smooth band; the alpha floor is back at 0.38.
   puffs.forEach(([ox, oy, r], i) => {
     // V18 rev: the lit-top puffs at the table's low rows (oy 0.10,
     // 0.12) hang over the dark core and wash it out — the first
@@ -1680,10 +1762,10 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     // their shadow.
     if (oy >= 0.05) return;
     const voy = oy > 0.05 ? oy * 0.7 : oy;
-    const cxp = p.x + (ox * mir * spreadK + (jit(i, 6) - 0.5) * 0.09) * w;
+    const cxp = p.x + (ox * mir * spreadK + (jit(i, 6) - 0.5) * 0.09 + (jit(i, 9) - 0.5) * 0.30) * w;
     const cyp = p.y + (voy - 0.10 + (jit(i, 7) - 0.5) * 0.06) * w * spread;
-    const rr = r * w * 0.5 * (0.86 + jit(i, 8) * 0.3);
-    softPuff(ctx, cxp, cyp, rr, `rgba(146,84,110,${0.38 + jit(i, 5) * 0.14})`, 'rgba(146,84,110,0)', squash);
+    const rr = r * w * 0.38 * (0.86 + jit(i, 8) * 0.3);
+    softPuff(ctx, cxp, cyp, rr, `rgba(146,84,110,${0.38 + jit(i, 5) * 0.18})`, 'rgba(146,84,110,0)', squash);
   });
   if (big) {
     // V12: the lit row sat at p.y − w × spread × 0.34 and spanned
@@ -1915,11 +1997,16 @@ function drawIsland(ctx, v, isl, t, light, world) {
         // off-apron grass one flat fill (V12 audit problem 9). The
         // pale tufts now use tone() (dark 0.53, not darkLand 0.71)
         // so they survive last light, and their share rises.
+        // V19: the specks are circles, and at 2× the delivery
+        // frame's east field reads as polka dots on flat green (V19
+        // audit problem 3). Every speck is a short horizontal
+        // ellipse now — grass stubble, not dots — in this pass and
+        // in the east-field pass below.
         ctx.fillStyle = sh(i, 3) > 0.62
           ? hexA(tone('#7d9a63', '#33482e'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.ellipse(p.x, p.y, r * 1.4, r * 0.7, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       // V18 rev: the first render's global speckle lift changed ZERO
@@ -1955,11 +2042,17 @@ function drawIsland(ctx, v, isl, t, light, world) {
         const sp = project(v, swx, shgt, swz);
         if (!sp || sp.x < 980 || sp.x > 1280 || sp.y < 560 || sp.y > 640) continue;
         const sr = clamp(sp.s * 0.75, 0.9, 4.5);
+        // V19: the pale marks here use a lighter dry tone
+        // (tone('#a8b878','#4a5a3a')) — the old pale tone collapses
+        // to the land tone at last light, so the east field's only
+        // visible texture was its dark dots (14 px >12 against the
+        // west field's 4,745 — V19 audit problem 3). The marks are
+        // short horizontal ellipses, like the main pass above.
         ctx.fillStyle = sh(i, 63) > 0.62
-          ? hexA(tone('#7d9a63', '#33482e'), speckA * 0.9)
+          ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, sr, 0, Math.PI * 2);
+        ctx.ellipse(sp.x, sp.y, sr * 1.4, sr * 0.7, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -2659,13 +2752,20 @@ function drawPalm(ctx, v, x, y, z, s) {
   // shorter, thicker, denser, drooping deeper, so they read as
   // foliage mass hugging the crown instead of spider legs. The
   // middle three of nine arc over the top (0.85), as before.
-  ctx.strokeStyle = '#2f6b46';
+  // V19: at small scale (base.s < 5, the approach island's palms)
+  // the fronds hash short and inward and draw dark-on-dark over the
+  // crown, so the worst palms read as smooth balls with no visible
+  // frond at 2× (V19 audit problem 7). Small palms get longer,
+  // darker fronds that clear the crown against the sky; the big
+  // delivery palms keep the current draw.
+  const small = base.s < 5;
+  ctx.strokeStyle = small ? '#265c3a' : '#2f6b46';
   ctx.lineWidth = Math.max(2.2, base.s * 0.24);
   for (let i = 0; i < 9; i += 1) {
     const a = Math.PI * (0.05 + i * 0.115);
     const ox = tx + (ph(i, 41) - 0.5) * h * 0.30;
     const oy = ty - h * 0.10 + ph(i, 42) * h * 0.03;
-    const len = h * (0.28 + ph(i, 43) * 0.14);
+    const len = h * ((small ? 0.42 : 0.28) + ph(i, 43) * 0.14);
     const droop = h * (0.22 + ph(i, 44) * 0.14);
     // V14: every frond peaked below the crown's top edge, so no
     // frond ever broke the silhouette and the crown read as a disc
