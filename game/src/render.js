@@ -567,10 +567,6 @@ function drawStorm(ctx, v, storm, t) {
   [[-0.10, 0.006], [-0.045, 0.011], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]].forEach(([shrink, a], li) => {
     const layerA = a * shaftBoost;
     const lslant = slant * (0.82 + li * 0.07);
-    const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
-    grad.addColorStop(0, `rgba(168,182,205,${layerA + 0.10 * shaftBoost})`);
-    grad.addColorStop(1, `rgba(168,182,205,${layerA * 0.4})`);
-    ctx.fillStyle = grad;
     // Each layer's outline kinks once at mid-height: per-layer
     // slants (V9) stopped the edges being parallel, but each edge
     // was still one straight line from cloud base to sea — at the
@@ -580,20 +576,57 @@ function drawStorm(ctx, v, storm, t) {
     // hundredths of R, so no edge runs straight the whole fall;
     // the two widest layers also weaken again (0.008 → 0.006,
     // 0.014 → 0.011 in the table above).
+    // V11 draws each layer in three horizontal bands: the kink
+    // broke each edge once, but the two halves were still straight
+    // runs of ~150 px and the storm sea kept a diagonal grain along
+    // them (V11 audit problem 4). Each band takes a hashed share of
+    // the layer's alpha (×0.72–1.12) and its side vertices jitter
+    // by a hashed ±0.02R — the jitter is shared between
+    // neighbouring bands, so the sides stay continuous — and no
+    // edge or brightness now runs more than a third of the fall
+    // unbroken. The band gradient reproduces the layer's own
+    // base-to-sea fade inside the band.
     const midY = (baseY + seaY) / 2;
     const kink = (grain(li, 77) - 0.5) * R * 0.05;
     const topW = R * (0.40 - shrink);
     const midW = R * (0.44 - shrink);
     const botW = R * (0.48 - shrink);
-    ctx.beginPath();
-    ctx.moveTo(cx - topW, baseY);
-    ctx.lineTo(cx + topW, baseY);
-    ctx.lineTo(cx + midW + lslant * 0.5, midY);
-    ctx.lineTo(cx + botW + lslant + kink, seaY);
-    ctx.lineTo(cx - botW + lslant + kink, seaY);
-    ctx.lineTo(cx - midW + lslant * 0.5, midY);
-    ctx.closePath();
-    ctx.fill();
+    const rows = [
+      { y: baseY, w: topW, off: 0 },
+      { y: midY, w: midW, off: lslant * 0.5 },
+      { y: seaY, w: botW, off: lslant + kink },
+    ];
+    const rowAt = (tt) => {
+      const k = tt < 0.5 ? 0 : 1;
+      const f = tt < 0.5 ? tt * 2 : (tt - 0.5) * 2;
+      return {
+        y: rows[k].y + (rows[k + 1].y - rows[k].y) * f,
+        w: rows[k].w + (rows[k + 1].w - rows[k].w) * f,
+        off: rows[k].off + (rows[k + 1].off - rows[k].off) * f,
+      };
+    };
+    const alphaAt = (tt) => (layerA + 0.10 * shaftBoost)
+      + (layerA * 0.4 - (layerA + 0.10 * shaftBoost)) * tt;
+    for (let b = 0; b < 3; b += 1) {
+      const t0 = b / 3;
+      const t1 = (b + 1) / 3;
+      const r0 = rowAt(t0);
+      const r1 = rowAt(t1);
+      const j0 = (grain(li * 4 + b, 59) - 0.5) * R * 0.04;
+      const j1 = (grain(li * 4 + b + 1, 59) - 0.5) * R * 0.04;
+      const bandF = 0.72 + grain(li * 3 + b, 71) * 0.40;
+      const grad = ctx.createLinearGradient(0, r0.y, 0, r1.y);
+      grad.addColorStop(0, `rgba(168,182,205,${alphaAt(t0) * bandF})`);
+      grad.addColorStop(1, `rgba(168,182,205,${alphaAt(t1) * bandF})`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(cx - r0.w + r0.off + j0, r0.y);
+      ctx.lineTo(cx + r0.w + r0.off + j0, r0.y);
+      ctx.lineTo(cx + r1.w + r1.off + j1, r1.y);
+      ctx.lineTo(cx - r1.w + r1.off + j1, r1.y);
+      ctx.closePath();
+      ctx.fill();
+    }
   });
   ctx.strokeStyle = `rgba(190,200,220,${0.15 * shaftBoost})`;
   ctx.lineWidth = Math.max(1, s * 0.35);
@@ -765,6 +798,23 @@ function drawStorm(ctx, v, storm, t) {
     );
   }
 
+  // Virga at range: a distant cell's belly does not end on a clean
+  // line — rain falls out of it and evaporates, trailing below the
+  // cloud base. In the approach frame the cell's lowest puff row
+  // (fy 0.04–0.07) drew that bottom edge and nothing hung below it
+  // but the shaft, so the mass read as a shape pasted on the sky
+  // (V11 audit problem 10). Seven small puffs of the belly's own
+  // colour at hashed widths and depths hang under the base; near
+  // cells (s ≥ 1.1, the storm frame's own) skip it — their base is
+  // read through the shaft and stipple already.
+  if (s < 1.1) {
+    for (let vi = 0; vi < 7; vi += 1) {
+      const vfx = -0.55 + 1.1 * grain(vi, 151);
+      const vDepth = (0.02 + 0.08 * grain(vi, 157)) * (seaY - baseY);
+      softPuff(ctx, cx + vfx * R, baseY + vDepth, (0.10 + 0.08 * grain(vi, 163)) * R, 'rgba(33,29,50,0.22)', 'rgba(33,29,50,0)');
+    }
+  }
+
   // Lightning: a few frames of fire inside the upper cloud, and a bolt
   // standing in the rain shaft from the cloud base to the sea. The period
   // is fixed, so a frozen screenshot either catches it lit or not — never
@@ -783,39 +833,51 @@ function drawStorm(ctx, v, storm, t) {
     // wide stroke along the polyline itself. The top-centre goes back
     // to the sky and the shoulder grain, which have texture.
     const nodes = [[cx + R * 0.12, baseY - bodySpan * 0.04]];
+    // The channel's steps are hashed, not metronomic: the old nodes
+    // stepped exactly ±0.07R sideways over four equal falls, so the
+    // bolt itself — not just its glow — was a regular zigzag, a
+    // drawn symbol of lightning rather than a strike (V11 audit
+    // problem 2). Sideways steps now take hashed magnitudes
+    // (0.035R–0.105R, still alternating, still returning near the
+    // axis) and the falls take hashed fractions of the drop,
+    // normalised to span it. The hash is seeded from the cell, so
+    // the channel is the same natural, uneven bolt every frame.
+    const fallFr = [0, 1, 2, 3].map((i) => 0.19 + 0.12 * grain(i, 77));
+    const fallSum = fallFr.reduce((a, b) => a + b, 0);
     for (let i = 1; i <= 4; i += 1) {
       nodes.push([
-        nodes[i - 1][0] + (i % 2 === 0 ? 1 : -1) * R * 0.07,
-        nodes[i - 1][1] + (seaY - baseY) / 4,
+        nodes[i - 1][0] + (i % 2 === 0 ? 1 : -1) * R * (0.035 + 0.07 * grain(i, 91)),
+        nodes[i - 1][1] + (seaY - baseY) * (fallFr[i - 1] / fallSum),
       ]);
     }
-    const fire = ctx.createRadialGradient(nodes[0][0], nodes[0][1], 4, nodes[0][0], nodes[0][1], R * 0.26);
-    fire.addColorStop(0, `rgba(255,244,200,${0.50 * flash})`);
-    fire.addColorStop(1, 'rgba(255,244,200,0)');
-    ctx.fillStyle = fire;
-    ctx.fillRect(nodes[0][0] - R * 0.28, nodes[0][1] - R * 0.28, R * 0.56, R * 0.56);
+    // The fire where the bolt leaves the cloud was one smooth
+    // radial disc — the storm frame's last perfectly round light
+    // shape, a small sun pasted at the channel's head (V11 audit
+    // problem 9). Three small softPuffs at hashed offsets around
+    // the origin break the disc into a cluster of fire; their
+    // combined weight is the old disc's, spread unevenly.
+    softPuff(ctx, nodes[0][0] + (grain(1, 131) - 0.5) * R * 0.10, nodes[0][1] + (grain(2, 131) - 0.5) * R * 0.06, R * 0.13, `rgba(255,246,205,${0.34 * flash})`, 'rgba(255,246,205,0)');
+    softPuff(ctx, nodes[0][0] + (grain(3, 131) - 0.5) * R * 0.12, nodes[0][1] + (grain(4, 131) - 0.5) * R * 0.08, R * 0.10, `rgba(255,250,220,${0.30 * flash})`, 'rgba(255,250,220,0)');
+    softPuff(ctx, nodes[0][0] + (grain(5, 131) - 0.5) * R * 0.08, nodes[0][1] + (grain(6, 131) - 0.5) * R * 0.05, R * 0.08, `rgba(255,246,205,${0.30 * flash})`, 'rgba(255,246,205,0)');
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    // The channel glow, broken three ways. As two clean strokes
-    // (R × 0.15 / R × 0.07) along this polyline it was a uniform
-    // ribbon on a regular zigzag — a lit chevron, a symbol, not lit
-    // cloud (V10 audit problem 1). Now the wide pass is narrower
-    // (R × 0.10) and stroked SEGMENT BY SEGMENT with hashed alpha
-    // and width, so the band's brightness varies along its length;
-    // a second, wider pass under it strokes a hashed-offset copy of
-    // the channel, so the two passes' edges nowhere agree; and the
-    // mid pass is hashed the same way. What is left is light pooled
-    // along a strike — brightest where the hashes agree, gone where
-    // they don't. The fire disc above shrank with it (R × 0.30 →
-    // R × 0.26): a smooth radial disc is the same family of shape.
-    // And the two wide passes follow a SMOOTHED copy of the channel
-    // (interior nodes averaged with their neighbours): light in
-    // cloud diffuses, it does not preserve the channel's corners —
-    // a glow that traces the bolt's regular zigzag corner for
-    // corner still reads as a ribbon bent into a chevron, however
-    // broken its brightness. The thin mid pass and the core keep
-    // the true nodes; only the wide light bends soft.
+    // The channel glow. As clean strokes along this polyline it was
+    // a uniform ribbon on a regular zigzag — a lit chevron, a
+    // symbol, not lit cloud (V10 audit problem 1). V10 broke the
+    // strokes three ways — hashed alpha and width per segment, a
+    // hashed-offset copy underneath, and a smoothed copy of the
+    // channel for the wide passes — and the chevron went, but the
+    // wide passes were still STROKES: at the storm frame's size the
+    // offset copy printed a second, fainter bent outline below-left
+    // of the core, a ghost echo of the bolt (V11 audit problem 3).
+    // A stroke has an outline; pooled light does not. The wide
+    // light is now softPuff blobs centred ON a smoothed copy of the
+    // channel (interior nodes averaged with their neighbours —
+    // light in cloud diffuses, it does not preserve the channel's
+    // corners), two per segment, wide and faint under narrow and
+    // brighter. The thin hashed mid pass still strokes the true
+    // nodes, and the core keeps them too.
     const glowSeg = (pts, gw, ga, salt) => {
       for (let i = 1; i < pts.length; i += 1) {
         const h = 0.72 + grain(i, salt) * 0.28;
@@ -834,12 +896,14 @@ function drawStorm(ctx, v, storm, t) {
         (nodes[i - 1][1] + ny * 2 + nodes[i + 1][1]) / 4,
       ];
     });
-    const offNodes = smoothNodes.map(([nx, ny], i) => [
-      nx + (grain(i, 81) - 0.5) * R * 0.04,
-      ny + (grain(i, 82) - 0.5) * bodySpan * 0.024,
-    ]);
-    glowSeg(offNodes, 0.13, 0.045, 83);
-    glowSeg(smoothNodes, 0.10, 0.075, 85);
+    for (let i = 1; i < smoothNodes.length; i += 1) {
+      for (const tt of [0.33, 0.66]) {
+        const px = smoothNodes[i - 1][0] + (smoothNodes[i][0] - smoothNodes[i - 1][0]) * tt;
+        const py = smoothNodes[i - 1][1] + (smoothNodes[i][1] - smoothNodes[i - 1][1]) * tt;
+        softPuff(ctx, px, py, R * 0.17, `rgba(255,244,200,${0.10 * flash})`, 'rgba(255,244,200,0)');
+        softPuff(ctx, px, py, R * 0.11, `rgba(255,250,220,${0.14 * flash})`, 'rgba(255,250,220,0)');
+      }
+    }
     glowSeg(nodes, 0.07, 0.13, 87);
     ctx.restore();
     ctx.shadowColor = 'rgba(255,240,190,0.9)';
@@ -875,11 +939,13 @@ function drawStorm(ctx, v, storm, t) {
       seg(nodes[i - 1][0], nodes[i - 1][1], nodes[i][0], nodes[i][1],
         `rgba(255,240,190,${0.9 * flash})`, Math.max(1.3, Math.max(3.2, s * 1.15) * taper));
     }
-    // The fork tapers too, out to its own tip.
+    // The fork tapers too, out to its own tip. Its reach is hashed
+    // like the channel's steps (V11 audit problem 2): fixed offsets
+    // made the fork the channel's regular twin.
     const fork = [
       [nodes[2][0], nodes[2][1]],
-      [nodes[2][0] - R * 0.09, nodes[2][1] + (seaY - baseY) * 0.22],
-      [nodes[2][0] - R * 0.05, nodes[2][1] + (seaY - baseY) * 0.44],
+      [nodes[2][0] - R * (0.05 + 0.07 * grain(1, 113)), nodes[2][1] + (seaY - baseY) * (0.16 + 0.10 * grain(2, 113))],
+      [nodes[2][0] - R * (0.02 + 0.06 * grain(3, 113)), nodes[2][1] + (seaY - baseY) * (0.36 + 0.14 * grain(4, 113))],
     ];
     for (let i = 1; i < fork.length; i += 1) {
       const taper = 1 - (i - 1) * 0.35;
@@ -935,6 +1001,16 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     const h = Math.sin(c.x * 12.9898 + c.z * 0.371 + i * 7.77 + salt * 3.1) * 43758.5453;
     return h - Math.floor(h);
   };
+  // Per-cloud variance of the shared puff table: every cloud used
+  // to stamp the same symmetric layout (jitter only ±0.09/±0.07),
+  // so two clouds in one frame — the cover's hero pair above all —
+  // read as copies of one stamp (V11 audit problem 8). Alternate
+  // clouds now mirror the table, the spread breathes by a hashed
+  // 0.85–1.25, and the lowest puffs ride up (oy × 0.7) so the base
+  // sits flatter. The light passes keep their absolute offsets —
+  // the sun does not mirror with the cloud.
+  const mir = jit(31, 5) > 0.5 ? -1 : 1;
+  const spreadK = 0.85 + jit(32, 5) * 0.4;
   // Inside the storm cell's silhouette a cloud is in the cell's shadow:
   // it keeps its belly, darkened, and loses every light pass — a pink
   // top drawn there pasted a clean lens speck onto the weather.
@@ -952,16 +1028,18 @@ function drawCloud(ctx, v, c, stormDisc = null) {
   const hz = clamp((p.fwd - 1200) / 2600, 0, 0.4);
   const bellyRgb = `${Math.round(74 + (138 - 74) * hz)},${Math.round(44 + (85 - 44) * hz)},${Math.round(86 + (112 - 86) * hz)}`;
   puffs.forEach(([ox, oy, r], i) => {
-    const cxp = p.x + (ox + (jit(i, 1) - 0.5) * 0.09) * w;
-    const cyp = p.y + (oy + (jit(i, 2) - 0.5) * 0.07) * w * spread;
+    const voy = oy > 0.05 ? oy * 0.7 : oy;
+    const cxp = p.x + (ox * mir * spreadK + (jit(i, 1) - 0.5) * 0.09) * w;
+    const cyp = p.y + (voy + (jit(i, 2) - 0.5) * 0.07) * w * spread;
     const rr = r * w * 0.62 * (0.86 + jit(i, 3) * 0.3);
     const a = shaded ? 0.34 : (0.5 + jit(i, 4) * 0.14) * (1 - hz * 0.8);
     softPuff(ctx, cxp, cyp, rr, `rgba(${bellyRgb},${a})`, `rgba(${bellyRgb},0)`, squash);
   });
   if (shaded) return;
   puffs.forEach(([ox, oy, r], i) => {
-    const cxp = p.x + (ox + (jit(i, 6) - 0.5) * 0.09) * w;
-    const cyp = p.y + (oy - 0.10 + (jit(i, 7) - 0.5) * 0.06) * w * spread;
+    const voy = oy > 0.05 ? oy * 0.7 : oy;
+    const cxp = p.x + (ox * mir * spreadK + (jit(i, 6) - 0.5) * 0.09) * w;
+    const cyp = p.y + (voy - 0.10 + (jit(i, 7) - 0.5) * 0.06) * w * spread;
     const rr = r * w * 0.5 * (0.86 + jit(i, 8) * 0.3);
     softPuff(ctx, cxp, cyp, rr, `rgba(146,84,110,${0.30 + jit(i, 5) * 0.14})`, 'rgba(146,84,110,0)', squash);
   });
@@ -996,7 +1074,13 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // audit problem 5). At 550 the cover's island (~440 m) and the
   // approach's (~330 m) still sit at zero; the storm frame's island
   // takes a gentle 0.06.
-  const haze = clamp((fwd - 550) / 2600, 0, 0.45);
+  // V11 deepens the ramp (500 m start, 1900 m run): 0.064 at 715 m
+  // was real but under the sheet's perception floor — Cahaya still
+  // read full-strength against its shadowed sea (V11 audit problem
+  // 6). The new curve gives 715 m a 0.113 wash and 1,000 m 0.26,
+  // while the cover's ~440 m and the approach's ~330 m stay at
+  // zero, so no frame that was right changes.
+  const haze = clamp((fwd - 500) / 1900, 0, 0.45);
   const dark = (1 - clamp(light, 0, 1)) * 0.75;
   // The ground darkens harder than the palette's other tones: at last light
   // the sky keeps its orange horizon while the land is already in night, and
@@ -1037,8 +1121,14 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // fine) can read there; a second value just inside the beach can.
   // The interior is repainted with the identical gradient, so nothing
   // inside 0.90 changes — only the rim darkens, at every range.
+  // V11: the fringe strengthens with range (0.30 near, up to 0.48
+  // far). At a constant 0.30 a mid-range island carried exactly one
+  // land value at its rim — the cover's left sliver island is a
+  // flat green wedge (V11 audit problem 7) — and the rim is the
+  // only place a second value can live at that range.
+  const fringeA = 0.30 + clamp((fwd - 600) / 1800, 0, 0.18);
   islandPath(ctx, v, isl, 1.0, 0);
-  ctx.fillStyle = hexA(toneLand('#1c3828', '#0a1810'), 0.30);
+  ctx.fillStyle = hexA(toneLand('#1c3828', '#0a1810'), fringeA);
   ctx.fill();
   islandPath(ctx, v, isl, 0.90, 0);
   ctx.fillStyle = land;
@@ -1473,30 +1563,84 @@ function drawApron(ctx, v, isl, toneLand) {
     ctx.closePath();
     ctx.fill();
   }
-  // Two nested widths, so the track's edges feather the way the
-  // depot's own worn patch does. The depot stands at
-  // (stripWid/2 + 15, z + 21) — the track runs to its patch's edge.
+  // The track is a CURVED worn-earth path now, sampled along a
+  // quadratic bend: it leaves the strip's east edge south of the
+  // depot, swings east, then runs north into the depot's patch.
+  // Through V10 it was one straight east–west quad at the depot's
+  // own z (widened and strengthened in V10, 6.6/4.0 m at
+  // 0.30/0.55) — the same axis and tone family as the apron's mow
+  // bands, so at judge size it read as one more stripe of the
+  // apron, not a road (V11 audit problem 1). A driven track has a
+  // curve, a lighter worn core where the traffic polishes it, dark
+  // wheel lines where the tyres run, and a widened mouth where it
+  // meets the workplace — all four are drawn here in the depot
+  // patch's own material, and the patch (drawn later, in drawDepot)
+  // covers the seam where they join.
   const ty = isl.h * 0.99 + 0.05;
-  const tx0 = isl.x + hw + 0.5;
-  const tx1 = isl.x + hw + 14;
-  const tz = isl.z + 21;
-  // Wider and stronger in V10: at 5.4/3.2 m and 0.22/0.45 the track
-  // never read in the delivery frame at all — the depot still
-  // floated on grass (V10 audit problem 3).
-  for (const [tw, ta] of [[6.6, 0.30], [4.0, 0.55]]) {
-    const a = project(v, tx0, ty, tz - tw / 2);
-    const b = project(v, tx1, ty, tz - tw / 2);
-    const c = project(v, tx1, ty, tz + tw / 2);
-    const e = project(v, tx0, ty, tz + tw / 2);
-    if (!a || !b || !c || !e) continue;
-    ctx.fillStyle = hexA(toneLand('#8a6f4d', '#4a3a28'), ta);
+  const tp0 = { x: isl.x + hw + 0.5, z: isl.z + 2 };
+  const tp1 = { x: isl.x + hw + 14, z: isl.z + 21 };
+  const tpc = { x: isl.x + hw + 13.5, z: isl.z + 3 };
+  const trackPt = (tt) => {
+    const u = 1 - tt;
+    return {
+      x: u * u * tp0.x + 2 * u * tt * tpc.x + tt * tt * tp1.x,
+      z: u * u * tp0.z + 2 * u * tt * tpc.z + tt * tt * tp1.z,
+    };
+  };
+  const trackTan = (tt) => {
+    const u = 1 - tt;
+    return {
+      x: 2 * u * (tpc.x - tp0.x) + 2 * tt * (tp1.x - tpc.x),
+      z: 2 * u * (tpc.z - tp0.z) + 2 * tt * (tp1.z - tpc.z),
+    };
+  };
+  const SEG = 7;
+  const wornBand = (wid, ta, hex, duskHex) => {
+    ctx.fillStyle = hexA(toneLand(hex, duskHex), ta);
+    for (let i = 0; i < SEG; i += 1) {
+      const t0 = i / SEG;
+      const t1 = (i + 1) / SEG;
+      const p0 = trackPt(t0);
+      const p1 = trackPt(t1);
+      const n0 = trackTan(t0);
+      const n1 = trackTan(t1);
+      const l0 = Math.hypot(n0.x, n0.z) || 1;
+      const l1 = Math.hypot(n1.x, n1.z) || 1;
+      // The mouth widens ×1.5 into the patch: a junction, not a
+      // line ending at a circle.
+      const w0 = (wid * (1 + 0.5 * t0 * t0)) / 2;
+      const w1 = (wid * (1 + 0.5 * t1 * t1)) / 2;
+      const a0 = projectClamped(v, p0.x - (n0.z / l0) * w0, ty, p0.z + (n0.x / l0) * w0);
+      const b1 = projectClamped(v, p1.x - (n1.z / l1) * w1, ty, p1.z + (n1.x / l1) * w1);
+      const c1 = projectClamped(v, p1.x + (n1.z / l1) * w1, ty, p1.z - (n1.x / l1) * w1);
+      const d0 = projectClamped(v, p0.x + (n0.z / l0) * w0, ty, p0.z - (n0.x / l0) * w0);
+      ctx.beginPath();
+      ctx.moveTo(a0.x, a0.y);
+      ctx.lineTo(b1.x, b1.y);
+      ctx.lineTo(c1.x, c1.y);
+      ctx.lineTo(d0.x, d0.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  };
+  wornBand(7.2, 0.34, '#8a6f4d', '#4a3a28');
+  wornBand(4.4, 0.50, '#9a7c56', '#54432e');
+  // The wheel lines: two dark ruts following the bend at ±1.15 m —
+  // the wear that says wheels, not weather, made this path.
+  for (const off of [1.15, -1.15]) {
+    ctx.strokeStyle = hexA(toneLand('#5f4a33', '#33281c'), 0.32);
+    ctx.lineWidth = Math.max(1, centre.s * 0.4);
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.lineTo(c.x, c.y);
-    ctx.lineTo(e.x, e.y);
-    ctx.closePath();
-    ctx.fill();
+    for (let i = 0; i <= SEG; i += 1) {
+      const tt = i / SEG;
+      const p = trackPt(tt);
+      const n = trackTan(tt);
+      const l = Math.hypot(n.x, n.z) || 1;
+      const sp = projectClamped(v, p.x + (n.z / l) * off, ty, p.z - (n.x / l) * off);
+      if (i === 0) ctx.moveTo(sp.x, sp.y);
+      else ctx.lineTo(sp.x, sp.y);
+    }
+    ctx.stroke();
   }
 }
 
@@ -1717,10 +1861,22 @@ function drawPalm(ctx, v, x, y, z, s) {
   // +0.34h read as a palm).
   if (base.s < 30) {
     ctx.save();
-    ctx.globalAlpha = clamp(1.02 - base.s * 0.07, 0.32, 0.8);
+    // V11: the crown is two-tone and its alpha floor is lifted.
+    // One flat ellipse left every crown a single value (V11 audit
+    // problem 5), and the old alpha curve — clamp(1.02 − s × 0.07,
+    // 0.32, 0.8) — reached its 0.32 floor at exactly the delivery
+    // palms' scale (s ≈ 10+), so the biggest crowns in the sheet
+    // were the faintest. The floor is 0.50 now, and a lit top mass
+    // offset toward the sun (up and to the left, where the sun
+    // hangs) gives the crown a sun side and a shadow side.
+    ctx.globalAlpha = clamp(1.15 - base.s * 0.06, 0.50, 0.85);
     ctx.fillStyle = '#2c5a3c';
     ctx.beginPath();
     ctx.ellipse(tx, ty + h * 0.05, h * 0.44, h * 0.17, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6f9a5f';
+    ctx.beginPath();
+    ctx.ellipse(tx - h * 0.10, ty - h * 0.01, h * 0.34, h * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
