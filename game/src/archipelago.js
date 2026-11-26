@@ -36,7 +36,7 @@ export function createWorld(seed) {
       outline,
       stripLen: 120,
       stripWid: 17,
-      palms: Array.from({ length: 9 }, () => ({
+      palms: Array.from({ length: 12 }, () => ({
         a: rng.next() * Math.PI * 2,
         d: 0.35 + rng.next() * 0.5,
         s: 0.8 + rng.next() * 0.6,

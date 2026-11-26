@@ -27,11 +27,15 @@ export function stageShot(name, seed) {
 
   if (name === 'approach') {
     // On final for Kelapa: low, slow, lined up on the strip, guidance ladder lit.
-    // The rotation's first mission is already the Kelapa mail run.
+    // The rotation's first mission is already the Kelapa mail run. Staged a
+    // touch higher and longer than a real final (300 m, isl.h + 26) so the
+    // whole strip — the frame's subject — shows inside the ladder instead
+    // of hiding behind it and the aircraft; still inside the guidance
+    // envelope, which arms below 85 m.
     const isl = world.islands[1];
     plane.x = isl.x + 4;
-    plane.z = isl.z - 260;
-    plane.y = isl.h + 21;
+    plane.z = isl.z - 300;
+    plane.y = isl.h + 26;
     plane.hdg = 0;
     plane.speed = 25;
     plane.throttle = 0.38;
@@ -60,12 +64,15 @@ export function stageShot(name, seed) {
     // that the turbulence is real (stormAt ≈ 0.8 here, so the warning reads
     // ROUGH AIR) and the whole cell — column, anvil, rain shaft, lightning —
     // stands in the left of the frame, while the next ring hangs in the
-    // clear air east of it: the routing decision in one frame.
+    // clear air east of it: the routing decision in one frame. The heading
+    // is swung a touch west of north so the cell's mass fills the frame's
+    // left half; headed due north its centre projected off the frame's
+    // edge and the shot was a flat wash of shoulder and empty sky.
     const isl = world.islands[3]; // CAHAYA, the mail's destination
     plane.x = -470;
     plane.z = 2680;
     plane.y = 95;
-    plane.hdg = 0.05;
+    plane.hdg = -0.09;
     plane.speed = 38;
     plane.throttle = 0.66;
     plane.vy = 0.4;
@@ -77,7 +84,10 @@ export function stageShot(name, seed) {
     for (const r of world.rings) if (r.z < plane.z) r.passed = true;
     const ring = world.rings.find((r) => !r.passed && r.z > plane.z);
     if (ring) {
-      ring.x = plane.x + 210;
+      // +120, not the +210 the north-heading staging used: swung west,
+      // the wider offset projects the ring off the frame's right edge
+      // and the frame loses its "clear air east" half.
+      ring.x = plane.x + 120;
       ring.y = 90;
       ring.z = plane.z + 380;
     }
