@@ -70,8 +70,11 @@ export function createWorld(seed) {
     });
   }
   // The rescue boat sits off Batu island, flare lit, waiting for the mail plane.
+  // REVISION (first render: the white hull read as a flat platform at
+  // 2×, not a boat): rescue red, the colour a lifeboat is painted, so
+  // the hull reads against its white cabin and the sea.
   const rescueBoat = {
-    x: -330, z: 2380, hdg: 0.8, speed: 0.4, hue: '#e8e2d4', rescue: true,
+    x: -330, z: 2380, hdg: 0.8, speed: 0.4, hue: '#c8552e', rescue: true,
   };
   boats.push(rescueBoat);
 

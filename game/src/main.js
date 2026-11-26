@@ -68,7 +68,7 @@ if (shotName) {
   plane = staged.plane;
   missions = staged.missions;
   game = staged.game;
-  const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4, storm: 2.93 }[shotName] ?? 1;
+  const frozenT = { cover: 1.3, approach: 0.7, delivery: 2.1, title: 0.4, storm: 2.93, rescue: 0.71 }[shotName] ?? 1;
   game.time = frozenT;
   world.setTime(frozenT); // the squall stands where the frozen clock puts it
   render(frozenT);

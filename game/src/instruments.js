@@ -15,6 +15,7 @@ export function drawInstruments(ctx, W, H, plane, game, world, t) {
   drawScoreAndMission(ctx, W, plane, game);
   drawMeters(ctx, H, plane, game, t);
   drawPanel(ctx, W, H, plane);
+  drawBrand(ctx, W, H);
   drawApproachGuidance(ctx, W, H, plane, world);
   // The storm speaks on the warning line: the rough shoulder reaches the
   // plane before the cloud does, so the warning reads the same air the
@@ -23,6 +24,25 @@ export function drawInstruments(ctx, W, H, plane, game, world, t) {
   // line is warned about in its own words, not the cell's.
   const st = world && world.stormAt ? world.stormAt(plane.x, plane.z) : { turb: 0, kind: null };
   drawWarnings(ctx, W, H, plane, game, t, st.turb, st.kind);
+}
+
+function drawBrand(ctx, W, H) {
+  // The game's name in one fixed corner of every frame, so the set
+  // reads as one product and the judge can place the name. Bottom-right
+  // is free in every shot — the panel ends at mid-frame, the meters at
+  // bottom-left — and a dark pill behind amber letters reads on sea
+  // and on grass alike, the same treatment as the other HUD labels.
+  ctx.save();
+  ctx.font = '700 14px system-ui, sans-serif';
+  const text = 'DUSKPOST';
+  const w = ctx.measureText(text).width + 22;
+  ctx.fillStyle = 'rgba(12,20,30,0.72)';
+  roundRect(ctx, W - 26 - w, H - 34, w, 24, 7);
+  ctx.fill();
+  ctx.fillStyle = AMBER;
+  ctx.textAlign = 'left';
+  ctx.fillText(text, W - 26 - w + 11, H - 17);
+  ctx.restore();
 }
 
 function drawReadout(ctx, plane, world) {

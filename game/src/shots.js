@@ -9,7 +9,7 @@ import { createPlane } from './flight-physics.js';
 import { createMissions } from './missions.js';
 import { makeView, project } from './render.js';
 
-export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title', 'storm'];
+export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title', 'storm', 'rescue'];
 
 export function stageShot(name, seed) {
   const world = createWorld(seed);
@@ -153,36 +153,78 @@ export function stageShot(name, seed) {
     game.screen = 'title';
     game.lightFrac = 0.9;
     game.light = 216;
+  } else if (name === 'rescue') {
+    // Floating beside the rescue boat off Batu, flare lit, the crew
+    // waiting: the mission the set has never shown. The plane sits on
+    // the water ~90 m north of the boat and looks south toward it, so
+    // the boat hangs ahead-right with Batu's palms beyond it and the
+    // flare's light on the sea — a second water scene, a different
+    // verb from the cover's takeoff. Speed 0, so no spray: she floats.
+    const boat = world.rescueBoat;
+    plane.x = boat.x + 40;
+    plane.z = boat.z + 90;
+    plane.y = 0;
+    plane.hdg = Math.PI + 0.1;
+    plane.speed = 0;
+    plane.throttle = 0;
+    plane.vy = 0;
+    plane.bank = 0;
+    plane.airborne = false;
+    plane.onWater = true;
+    plane.spray = 0;
+    plane.fuel = 64;
+    plane.cargoKg = 0; // a rescue carries no mail
+    // The rescue mission, in the real shape the game uses — the same
+    // staging the cover already does for the mail mission.
+    missions.current = {
+      kind: 'rescue',
+      title: 'RESCUE',
+      detail: 'Set down beside the flaring boat',
+      targetX: boat.x,
+      targetZ: boat.z,
+      boat,
+    };
+    game.score = 1460;
+    game.lightFrac = 0.35;
+    game.light = 84;
+    // REVISION (first render: the banner's top edge met the beacon
+    // label's bottom edge — two dark pills stacked as a collision):
+    // no banner on the rescue shot. Its big plain-words text is the
+    // beacon's own RESCUE — FLARE label, 24 px in a dark pill, plus
+    // the objective chip and the mission card.
+    game.stats.rescues = 1; // one rescue already done; this is the second
+    game.stats.deliveries = 2;
+    game.stats.rings = 3;
   } else {
-    // cover: mid-flight, banked toward the next glowing ring, Cahaya's strip and
-    // lighthouse ahead, its mail mission on the card — the whole game in one frame.
-    // Staged closer than V1 and a little lower, so the island and its strip fill
-    // more of the frame and the runway reads at a glance instead of as a dash —
-    // but kept above the approach guidance's envelope (it arms below 85 m), so
-    // the cover stays a cruise frame with no landing overlay on it.
+    // cover: WATER TAKEOFF south of Cahaya — on the step, spray flying,
+    // the next ring low over the water ahead-right, Cahaya's strip and
+    // lighthouse ahead, its mail aboard. The seaplane's defining verb
+    // in the large slot: no other cover in the field shows water ops.
+    // Staged on the water south of the island (the same water the old
+    // cruise cover flew over), so the sky keeps the hero clouds and
+    // the squall bank — only the plane's state and the ring change.
     const isl = world.islands[3]; // CAHAYA
     plane.x = isl.x - 74;
     plane.z = isl.z - 430;
-    plane.y = 88;
+    plane.y = 0;
     plane.hdg = 0.07;
-    plane.speed = 39;
-    plane.throttle = 0.68;
-    plane.vy = 0.8;
-    plane.bank = -0.34;
-    plane.airborne = true;
-    plane.onWater = false;
+    plane.speed = 30;
+    plane.throttle = 1.0;
+    plane.vy = 0;
+    plane.bank = -0.12;
+    plane.airborne = false;
+    plane.onWater = true;
+    plane.spray = 1; // on the step: the floats are throwing water
     plane.fuel = 78;
     plane.cargoKg = 240; // Cahaya's mail is in the back
-    // Rings south of here are already threaded on this run; the next one hangs
-    // right in the flight path, big in the frame. It hangs at the plane's own
-    // altitude and a touch closer than V2 staged it: at y 80 its lower arc
-    // crossed Cahaya's north shore, where at the flight altitude it floats
-    // clean over the water, dead ahead — the hoop she is about to thread.
+    // Rings south of here are already threaded on this run; the next
+    // one hangs low over the water ahead-right, big in the frame — a
+    // gate to climb through off the water, not a halo dead centre.
     for (const r of world.rings) if (r.z < plane.z) r.passed = true;
     const ring = world.rings.find((r) => !r.passed && r.z > plane.z) || world.rings[3];
-    ring.x = plane.x + 12;
-    ring.y = 88;
-    ring.z = plane.z + 165;
+    ring.x = plane.x + 30;
+    ring.y = 18;
+    ring.z = plane.z + 130;
     // The card shows this island's run: describe the current mission as Cahaya's.
     missions.current.island = isl;
     missions.current.targetX = isl.x;

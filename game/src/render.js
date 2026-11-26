@@ -67,6 +67,7 @@ export function drawScene(ctx, v, world, plane, fx, game, t) {
   }
   drawSeaplane(ctx, VIEW_W / 2 + v.shakeX, VIEW_H * 0.665, scale, plane, t);
   drawSpray(ctx, plane, t);
+  drawWake(ctx, plane, t);
 }
 
 function drawSky(ctx, v, light, t) {
@@ -2002,11 +2003,17 @@ function drawIsland(ctx, v, isl, t, light, world) {
         // audit problem 3). Every speck is a short horizontal
         // ellipse now — grass stubble, not dots — in this pass and
         // in the east-field pass below.
+        // V20 REVISION (first render: the east pass's dashes alone
+        // did not fix the read — the main pass's dots dominate the
+        // box): the main pass's marks are dashes too, 2.2× as wide
+        // as tall. The approach grass is the guard — if its 2× crop
+        // turns scratchy, this reverts and the east grass stays a
+        // partial.
         ctx.fillStyle = sh(i, 3) > 0.62
           ? hexA(tone('#7d9a63', '#33482e'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, r * 1.4, r * 0.7, 0, 0, Math.PI * 2);
+        ctx.ellipse(p.x, p.y, r * 2.2, r * 0.5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       // V18 rev: the first render's global speckle lift changed ZERO
@@ -2048,11 +2055,16 @@ function drawIsland(ctx, v, isl, t, light, world) {
         // visible texture was its dark dots (14 px >12 against the
         // west field's 4,745 — V19 audit problem 3). The marks are
         // short horizontal ellipses, like the main pass above.
+        // V20: the ellipses still read as dots at 2× (V20 audit
+        // problem 8) — in THIS pass only, the marks are short
+        // horizontal dashes, 2.2× as wide as tall: grass stubble,
+        // not polka dots. The main world-space pass above keeps its
+        // ellipses, so the approach grass cannot turn scratchy.
         ctx.fillStyle = sh(i, 63) > 0.62
           ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
-        ctx.ellipse(sp.x, sp.y, sr * 1.4, sr * 0.7, 0, 0, Math.PI * 2);
+        ctx.ellipse(sp.x, sp.y, sr * 2.2, sr * 0.5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
@@ -2965,6 +2977,15 @@ function drawBoat(ctx, v, b, t) {
   ctx.lineTo(p.x - w * 0.34, p.y + h * 0.5);
   ctx.closePath();
   ctx.fill();
+  // A dark waterline along the hull's bottom edge, so the hull reads as
+  // a boat sitting IN the water and not as a flat plate laid on it
+  // (REVISION: the white rescue hull read as a platform at 2×).
+  ctx.strokeStyle = 'rgba(20,30,34,0.55)';
+  ctx.lineWidth = Math.max(1, p.s * 0.14);
+  ctx.beginPath();
+  ctx.moveTo(p.x - w * 0.36, p.y + h * 0.42);
+  ctx.lineTo(p.x + w * 0.36, p.y + h * 0.42);
+  ctx.stroke();
   ctx.fillStyle = '#f3ead8';
   ctx.fillRect(p.x - w * 0.16, p.y - h * 1.25, w * 0.34, h * 0.75);
   ctx.fillStyle = '#22333a';
@@ -3106,6 +3127,60 @@ function drawSpray(ctx, plane, t) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+}
+
+/**
+ * The wake: a V of faint white streaks trailing from the floats toward
+ * the bottom edge, drawn only while the plane is on the water at speed.
+ * It is screen-space, like the spray: the chase camera sits 30 m behind
+ * the plane, so a world-space trail behind her falls under the frame
+ * (proved by projection — the first metres of wake project below the
+ * bottom edge) and only a fan from the floats reads. Two diverging
+ * streaks a side, opaque at the floats and gone at the edge — water,
+ * not scratches. If the 2× crop reads as scratches, this is reverted
+ * and the spray alone carries the water takeoff.
+ */
+function drawWake(ctx, plane, t) {
+  if (!plane.onWater || plane.spray <= 0.3) return;
+  const cx = VIEW_W / 2;
+  const top = VIEW_H * 0.665 + 58;
+  const a = plane.spray;
+  ctx.save();
+  ctx.lineCap = 'round';
+  // REVISION (first render: alpha 0.30, width 5–3 read as faint
+  // scratches at 2×, and the plane floated ungrounded): the streaks
+  // are stronger and wider with a slight curve, and a soft foam pool
+  // sits under the floats so the plane reads as ON the water.
+  const pool = ctx.createRadialGradient(cx, top + 2, 4, cx, top + 2, 95);
+  pool.addColorStop(0, `rgba(235,250,250,${0.22 * a})`);
+  pool.addColorStop(1, 'rgba(235,250,250,0)');
+  ctx.fillStyle = pool;
+  ctx.save();
+  ctx.translate(cx, top + 2);
+  ctx.scale(1, 0.22);
+  ctx.beginPath();
+  ctx.arc(0, 0, 95, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 3; i += 1) {
+      const spread = 34 + i * 40;
+      const len = 185 - i * 26;
+      const grad = ctx.createLinearGradient(cx + side * 18, top, cx + side * spread, top + len);
+      grad.addColorStop(0, `rgba(235,250,250,${0.48 * a})`);
+      grad.addColorStop(1, 'rgba(235,250,250,0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 8 - i * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + side * 18, top + 4);
+      ctx.quadraticCurveTo(
+        cx + side * (18 + spread) * 0.5 + side * 6, top + len * 0.55,
+        cx + side * spread, top + len,
+      );
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 function clamp(v, lo, hi) {
