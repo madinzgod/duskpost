@@ -198,7 +198,14 @@ function drawSea(ctx, v, plane, light) {
       const h = Math.sin(i * 12.9898 + salt * 7.77) * 43758.5453;
       return h - Math.floor(h);
     };
-    const wz = plane.z + 40 + hash(1) * 1500;
+    // V13: the field still started 40 m ahead of the plane, so the
+    // near water at the frame's bottom corners — between the camera
+    // and the plane — carried no sparkle at all (V13 audit problem
+    // 4: the cover's bottom-left corner is flat). The field now
+    // reaches 160 m behind the plane; a backward dash is only a few
+    // px at alpha ≤ 0.4, so the corners gain specks, not a second
+    // glitter column.
+    const wz = plane.z - 160 + hash(1) * 1700;
     const wx = plane.x + hash(2) * 900 - 450 + Math.sin(i * 91.7) * 70;
     const p = project(v, wx, 0, wz + hash(3) * 60);
     if (!p || p.y < v.horizon) continue;
@@ -209,6 +216,29 @@ function drawSea(ctx, v, plane, light) {
     // problems 3 and 8). The floor is 0.10 now and the count is 110:
     // the sea keeps some light everywhere without the glitter
     // column coming back.
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
+    ctx.fillRect(p.x - len / 2, p.y, len, Math.max(1, p.s * 0.012));
+  }
+  // V13 rev: the first attempt (field to plane.z − 160) added nothing
+  // visible — the water at the frame's bottom sits 250–450 m ahead
+  // of the plane, not behind it, so backward dashes project below
+  // the frame's bottom edge (proven by projection: y 800 needs
+  // fwd 249). The corners are flat because the field is thin there,
+  // not because it starts too late. A small dedicated near-water
+  // pass puts dashes where the bottom band actually is (fwd
+  // 240–460), gated to that band so no dash lands on the strip or
+  // under the frame; the sea draws before the islands, so a dash
+  // under land is covered.
+  for (let i = 0; i < 24; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 3.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const wz = plane.z + 210 + hash(1) * 220;
+    const wx = plane.x + hash(2) * 900 - 450 + Math.sin(i * 91.7) * 70;
+    const p = project(v, wx, 0, wz + hash(3) * 60);
+    if (!p || p.y < v.horizon || p.fwd < 200 || p.fwd > 500) continue;
+    const len = clamp(p.s * 0.09, 2, 26);
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
     ctx.fillRect(p.x - len / 2, p.y, len, Math.max(1, p.s * 0.012));
   }
@@ -547,15 +577,26 @@ function drawStorm(ctx, v, storm, t) {
   // the same slanted dashes at a lower alpha carries the rain out
   // onto the open water; it adds texture, not a shape, and the
   // annulus test keeps it off the shadow it extends.
-  for (let i = 0; i < 40; i += 1) {
+  // V13: the ring's dashes only ever span fz ±1 — a band ±74 px
+  // around the sea line — so the near water at the frame's bottom
+  // (y 720–800, fz 1.6–2.1) still carries nothing (V13 audit
+  // problem 5, proven by projection: cell seaY 646, R 869). The
+  // ring now reaches fz ±2.2, down to the frame's bottom edge, with
+  // more dashes to hold the density; alpha stays capped at 0.07.
+  // V13 rev: the first pass measured ~13 changed px in the
+  // bottom-right quarter — the far band is wide and most dashes
+  // fall off-frame, so 70 dashes read as nothing down there.
+  // Count 70 → 120 and the cap 0.07 → 0.09: the bottom band
+  // carries visible rain now, still faint enough to stay texture.
+  for (let i = 0; i < 120; i += 1) {
     const fx = (grain(i, 81) * 2 - 1) * 2.4;
-    const fz = (grain(i, 82) * 2 - 1);
+    const fz = (grain(i, 82) * 2 - 1) * 2.2;
     const d2 = fx * fx * 0.8 + fz * fz;
-    if (d2 < 1.15 || d2 > 5.6) continue;
+    if (d2 < 1.15 || d2 > 9.4) continue;
     const px = cx + fx * R;
     const py = seaY + fz * R * 0.085;
     const len = R * (0.015 + grain(i, 83) * 0.025);
-    ctx.globalAlpha = Math.min(0.07, (0.03 + grain(i, 84) * 0.03) * shaftBoostPre);
+    ctx.globalAlpha = Math.min(0.09, (0.03 + grain(i, 84) * 0.03) * shaftBoostPre);
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + len * 0.35, py + len);
@@ -979,10 +1020,17 @@ function drawStorm(ctx, v, storm, t) {
     // The fork tapers too, out to its own tip. Its reach is hashed
     // like the channel's steps (V11 audit problem 2): fixed offsets
     // made the fork the channel's regular twin.
+    // V13: the fork's offsets nearly matched the channel's own next
+    // step, so the branch ran parallel to the channel and rejoined
+    // it — projection-proven, the fork's first point sits 22 px
+    // from nodes[3] and its tip 12 px from nodes[4], a thin lens
+    // instead of a branch (V13 audit problem 6). The fork now
+    // diverges on its own: wider leftward reach at both points, so
+    // it separates from the channel and ends clear of it.
     const fork = [
       [nodes[2][0], nodes[2][1]],
-      [nodes[2][0] - R * (0.05 + 0.07 * grain(1, 113)), nodes[2][1] + (seaY - baseY) * (0.16 + 0.10 * grain(2, 113))],
-      [nodes[2][0] - R * (0.02 + 0.06 * grain(3, 113)), nodes[2][1] + (seaY - baseY) * (0.36 + 0.14 * grain(4, 113))],
+      [nodes[2][0] - R * (0.12 + 0.08 * grain(1, 113)), nodes[2][1] + (seaY - baseY) * (0.16 + 0.10 * grain(2, 113))],
+      [nodes[2][0] - R * (0.18 + 0.10 * grain(3, 113)), nodes[2][1] + (seaY - baseY) * (0.36 + 0.14 * grain(4, 113))],
     ];
     for (let i = 1; i < fork.length; i += 1) {
       const taper = 1 - (i - 1) * 0.35;
@@ -1155,7 +1203,27 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // 715 m now takes 0.156 and 1,000 m 0.324, while the cover's
   // ~440 m and the approach's ~330 m still sit below the start,
   // so no frame that was right changes.
-  const haze = clamp((fwd - 450) / 1700, 0, 0.45);
+  // V13: those three deepenings never touched Cahaya in the storm
+  // frame at all — the "715 m" is the HUD's plane-to-island
+  // distance, but the haze keyed on `fwd`, the along-heading
+  // component, and Cahaya sits mostly EAST of the storm camera's
+  // heading, so its fwd is only 219 m: below the 450 m start, haze
+  // 0 (V13 audit problem 7, proven by projection). Haze is
+  // atmospheric perspective — it keys on the true distance from
+  // the camera now, on the same 450 m start. (V13 finisher
+  // correction, measured 2026-11-26: Cahaya computes 0.39 at the
+  // 700 m span, but it projects to screen x 4341 in the storm
+  // shot — 3,061 px off the frame's right edge — so the storm
+  // frame takes 0 px from this change, twice measured; the island
+  // the audit called Cahaya is TANJUNG at (1103,452), already at
+  // the 0.45 cap under both spans, so no curve change can touch
+  // it. The span's visible effects are the cover, where Cahaya
+  // shifts 1–3 levels over 69,270 px, and the delivery frame,
+  // where BATU reaches the cap. The 1700 m span left Cahaya at
+  // 0.16; the 700 m span was chosen so the mid-distance islands
+  // that ARE in frame actually sit in the weather.)
+  const dist = Math.hypot(isl.x - v.camX, isl.z - v.camZ);
+  const haze = clamp((dist - 450) / 700, 0, 0.45);
   const dark = (1 - clamp(light, 0, 1)) * 0.75;
   // The ground darkens harder than the palette's other tones: at last light
   // the sky keeps its orange horizon while the land is already in night, and
@@ -1283,7 +1351,12 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // what carries those islands instead. The strip, huts and palms
   // all draw after this, on top, so no speck ever dots the runway.
   if (world && world.heightAt && fwd < 1500) {
-    const speckA = 0.34 * clamp(1.35 - fwd / 1400, 0, 1);
+    // V13: at the approach island's 330 m the specks are ~2 px at
+    // alpha 0.34 — invisible at judge size, so the grass reads flat
+    // between the broad patches (V13 audit problem 10). The radius
+    // and alpha lift a step; the delivery frame's on-island specks
+    // grow only to the new 4.0 px cap.
+    const speckA = 0.40 * clamp(1.35 - fwd / 1400, 0, 1);
     if (speckA > 0.03) {
       const sh = (i, salt) => {
         const h = Math.sin(isl.z * 3.71 + isl.x * 1.37 + i * 12.9898 + salt * 7.77) * 43758.5453;
@@ -1299,7 +1372,7 @@ function drawIsland(ctx, v, isl, t, light, world) {
         const wz = isl.z + Math.sin(ang) * dist;
         const p = project(v, wx, world.heightAt(wx, wz), wz);
         if (!p) continue;
-        const r = clamp(p.s * 0.55, 0.7, 3.1);
+        const r = clamp(p.s * 0.75, 0.9, 4.0);
         // V12: the pale tufts went through toneLand, whose darkLand
         // is 0.71 at last light — they were dragged down to the
         // land's own dusk tone and the speckle's contrast collapsed
@@ -1706,13 +1779,23 @@ function drawApron(ctx, v, isl, toneLand) {
     }
   };
   wornBand(7.2, 0.34, '#8a6f4d', '#4a3a28');
-  wornBand(4.4, 0.50, '#9a7c56', '#54432e');
+  // V13: the core was the ruts' bed, and where it crossed a dark mow
+  // band it composited as dark as the ruts themselves — pixel-sampled
+  // in the V12 delivery frame, the near segment's rut and core both
+  // measure lum 56 vs 55 (zero contrast) and the far segment only
+  // 61–62 vs 73 (V13 audit problem 3). The core is lifted a touch
+  // (alpha 0.50 → 0.58, a lighter tone) so the ruts have a bed to
+  // read against; the width stays, so no second track appears.
+  wornBand(4.4, 0.58, '#a5835c', '#54432e');
   // The wheel lines: two dark ruts following the bend at ±1.30 m —
   // the wear that says wheels, not weather, made this path. V11's
   // ruts (alpha 0.32, 1 px, mid-brown) landed faint and vanished at
   // judge size (V12 audit problem 6): darker, half alpha, wider.
+  // V13: the width was never the problem (13.5 px at full size in
+  // the delivery frame) — the contrast was. Darker tone, higher
+  // alpha, same width (V13 audit problem 3).
   for (const off of [1.30, -1.30]) {
-    ctx.strokeStyle = hexA(toneLand('#4a3524', '#2a1f14'), 0.50);
+    ctx.strokeStyle = hexA(toneLand('#3a2a1c', '#241a10'), 0.65);
     ctx.lineWidth = Math.max(1.5, centre.s * 0.55);
     ctx.beginPath();
     for (let i = 0; i <= SEG; i += 1) {
@@ -1777,6 +1860,28 @@ function drawStrip(ctx, v, isl, t, world) {
     ctx.lineTo(e.x, e.y);
     ctx.closePath();
     ctx.fill();
+  }
+  // Tyre wear: two faint dark lines flanking the centreline, the
+  // wear a strip actually carries. Without them the surface between
+  // the threshold bars and the centreline is one flat fill — the
+  // largest flat area left in the sheet (V13 audit problem 9).
+  // Gated to stripFwd < 650 like the centreline dashes, so they
+  // never become sub-pixel clutter at range.
+  if (stripFwd < 650) {
+    ctx.strokeStyle = 'rgba(28,24,20,0.14)';
+    ctx.lineWidth = Math.max(1.5, centreP ? centreP.s * 0.15 : 1.5);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      let started = false;
+      for (let d = -hl + 6; d <= hl - 6; d += 12) {
+        const p = projectClamped(v, isl.x + side * 2.2, y, isl.z + d);
+        if (!started) {
+          ctx.moveTo(p.x, p.y);
+          started = true;
+        } else ctx.lineTo(p.x, p.y);
+      }
+      ctx.stroke();
+    }
   }
   // The strip's edges as lines through the same clamped slices as the
   // surface, so the strip has edges at every range — including when the
@@ -1966,17 +2071,24 @@ function drawPalm(ctx, v, x, y, z, s) {
     // offset toward the sun (up and to the left, where the sun
     // hangs) gives the crown a sun side and a shadow side.
     ctx.globalAlpha = clamp(1.15 - base.s * 0.06, 0.50, 0.85);
+    // V13: the crown was still 0.38h × 0.23h — 1.65:1 wide-to-tall
+    // — and from the delivery camera's low angle the crowns read as
+    // flat green discs again, however varied the fronds are (V13
+    // audit problem 8). The crown is genuinely domed now: taller
+    // base, a higher lit top, a deeper underside crescent. Frond
+    // angles and lengths are untouched — the approach frame's palms
+    // read well and are not re-opened.
     ctx.fillStyle = '#2c5a3c';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.02, h * 0.38, h * 0.23, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.02, h * 0.38, h * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#1e4229';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.13, h * 0.30, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.15, h * 0.30, h * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#6f9a5f';
     ctx.beginPath();
-    ctx.ellipse(tx - h * 0.09, ty - h * 0.05, h * 0.30, h * 0.15, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx - h * 0.09, ty - h * 0.08, h * 0.30, h * 0.18, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }

@@ -39,7 +39,16 @@ export function drawSeaplane(ctx, sx, sy, scale, plane, t) {
   ctx.fillStyle = 'rgba(45,74,82,0.88)';
   ctx.font = '700 7px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('D U S K P O S T', 0, -29.8);
+  // V13: the name was one centred string, and the engine nacelle
+  // (drawn next, at (0,−28)) covered its middle letters, so every
+  // frame read "DU…ST" (V13 audit problem 1). The name now sits as
+  // two halves, each centred on its own wing half — and far enough
+  // outboard (±38) that the inner letters clear the prop disc's
+  // ±19 wash as well as the nacelle: the first attempt at ±31 left
+  // the K and P washed out by the disc's rim, still reading "DU…ST"
+  // in the render.
+  ctx.fillText('D U S K', -38, -29.8);
+  ctx.fillText('P O S T', 38, -29.8);
   blinkLight(ctx, -W / 2 + 2, -28, '#ff4b3e', t, 0);
   blinkLight(ctx, W / 2 - 2, -28, '#3eff7a', t, 0);
 

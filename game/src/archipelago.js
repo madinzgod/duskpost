@@ -92,6 +92,30 @@ export function createWorld(seed) {
     { x: -60, y: 195, z: 3680, s: 780 },
     { x: 760, y: 140, z: 3150, s: 520 },
   );
+  // V13: a small seeded cloud can land in a hero cloud's own column
+  // and sit on its top edge — in seed 7 one did (430, 205, 3367,
+  // s 135, against the 640 hero at (430, 165, 3380)), printing a
+  // dark-rimmed bump on the cover's right hero cloud (V13 audit
+  // problem 2). Any small cloud inside a hero's column and within
+  // 90 m above its centre is shifted sideways until it clears
+  // every hero's column (candidates tried in order, west first):
+  // the west side is open sky in the cover (verified by projection
+  // — the shifted cloud lands in the sky gap between the two hero
+  // clouds, is skipped as too small in the approach and delivery
+  // frames, and sits off-frame in the storm frame). The shift
+  // happens after the rng loop, so no seeded value after it moves.
+  const heroes = clouds.slice(-3);
+  const collides = (c) => heroes.some((h) => Math.abs(c.x - h.x) < 160
+    && Math.abs(c.z - h.z) < 160 && c.y - h.y > 0 && c.y - h.y < 90);
+  for (const c of clouds) {
+    if (c.s >= 250 || !collides(c)) continue;
+    for (const dx of [-260, 260, -520, 520, -780, 780]) {
+      const ox = c.x;
+      c.x = ox + dx;
+      if (!collides(c)) break;
+      c.x = ox;
+    }
+  }
 
   // The storm cell: one seeded cumulonimbus standing off the course's west
   // side at Cahaya's latitude, big enough to see from two islands away. The
