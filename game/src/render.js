@@ -248,18 +248,70 @@ function drawSea(ctx, v, plane, light) {
   // The dashes are bigger now (6 px floor, 2 px tall), the spread
   // narrower (±350 m), the count 140 — visible light on the water,
   // still short dashes, not a glitter column.
-  for (let i = 0; i < 140; i += 1) {
+  // V15: the world-uniform sample wasted the pass — at the approach
+  // camera's fwd ~130 m the frame is only ±71 m wide in world
+  // terms, so the bottom-right corner is a 31 m slice of a 700 m
+  // spread and exactly 0 of the 140 dashes projected into any
+  // bottom box (V15 audit problem 1, probe-proven); the cover got
+  // 4 dashes in its BR corner, 8 in its BL sea (problem 2, 3);
+  // the delivery far-left sea got 4 (problem 4). The sample is
+  // frame-biased now: pick the screen point first, inside the
+  // visible sea band, and invert the projection to world
+  // coordinates (s = (py − horizon)/camY, fwd = focal/s,
+  // right = (px − 640)/s, then rotate by the heading) — every dash
+  // drawn is a visible dash, and the two bottom HUD rects are
+  // rejected outright instead of swallowing dashes. The sea draws
+  // before the islands, so a dash under land is still covered.
+  // The sample is camera-relative by construction — the same
+  // convention as the existing sea passes, which already sample
+  // plane-relative, and the sea gradient and glitter path are
+  // screen-space already.
+  for (let i = 0; i < 180; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 3.1) * 43758.5453;
       return h - Math.floor(h);
     };
-    const wz = plane.z + 100 + hash(1) * 330;
-    const wx = plane.x + hash(2) * 700 - 350 + Math.sin(i * 91.7) * 70;
-    const p = project(v, wx, 0, wz + hash(3) * 60);
-    if (!p || p.y < v.horizon || p.fwd < 100 || p.fwd > 500) continue;
+    const px = 4 + hash(1) * 1272;
+    const py = v.horizon + 24 + hash(2) * (796 - v.horizon - 24);
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 600) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
     const len = clamp(p.s * 0.35, 6, 30);
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
     ctx.fillRect(p.x - len / 2, p.y, len, Math.max(2, p.s * 0.04));
+  }
+  // A far-band loop for the sea the main field never reaches: the
+  // field tops out at fwd 1540, so the delivery frame's far band
+  // (fwd 1500–2600, one pixel row below the horizon is fwd 1717
+  // at that camera — V15 audit problem 5) carries zero dashes.
+  // Same frame-biased sampling, smaller 4×2 px dashes at alpha
+  // 0.10–0.25; the existing 160-dash field is untouched, so V14's
+  // near density is not thinned.
+  for (let i = 0; i < 60; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 9.4) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 1272;
+    const py = v.horizon + 6 + hash(2) * 84;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 600 || fwd > 2600) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12);
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.25);
+    ctx.fillRect(p.x - len / 2, p.y, len, 2);
   }
   ctx.globalAlpha = 1;
 }
@@ -414,8 +466,12 @@ function drawSquall(ctx, v, sq, t) {
     // the cover's 2.4 km it was a rumour the eye could not hold
     // against the bright horizon (V14 audit problem 9). 0.30 → 0.08
     // now — still a rumour, not a smear.
-    grad.addColorStop(0, 'rgba(168,182,205,0.30)');
-    grad.addColorStop(1, 'rgba(168,182,205,0.08)');
+    // V15: the wash is there but the rain is not — the curtain
+    // carried 10 streaks across 540 px, each ~8 px × 1 px at
+    // alpha 0.13 (V15 audit problem 6). The top lifts a touch
+    // more, 0.30 → 0.36, and the streaks below do the reading.
+    grad.addColorStop(0, 'rgba(168,182,205,0.36)');
+    grad.addColorStop(1, 'rgba(168,182,205,0.10)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(base.x + (cl.c - 0.25) * halfW, baseY);
@@ -432,8 +488,8 @@ function drawSquall(ctx, v, sq, t) {
   // is the squall's whole tactical story (a line you can time).
   for (const gfx of [-0.35, 0.35]) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
-    grad.addColorStop(0, 'rgba(216,198,208,0.10)');
-    grad.addColorStop(1, 'rgba(216,198,208,0.03)');
+    grad.addColorStop(0, 'rgba(216,198,208,0.16)');
+    grad.addColorStop(1, 'rgba(216,198,208,0.05)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(base.x + (gfx - 0.08) * halfW, baseY);
@@ -443,9 +499,15 @@ function drawSquall(ctx, v, sq, t) {
     ctx.closePath();
     ctx.fill();
   }
-  ctx.strokeStyle = 'rgba(190,200,220,0.13)';
-  ctx.lineWidth = Math.max(1, s * 0.3);
-  const streaks = Math.max(5, Math.floor(halfW / 26));
+  // V15: ten streaks across a 540 px curtain, each ~8 px long, 1 px
+  // wide, alpha 0.13 — at judge size a streak is ~5 px at alpha
+  // ~0.08, below what the eye holds (V15 audit problem 6). The
+  // rain is discrete now: ~27 streaks, alpha 0.28, 2 px wide —
+  // short dashes, not a smear. (Length, ~0.55 of the fall, was
+  // already right and is unchanged.)
+  ctx.strokeStyle = 'rgba(190,200,220,0.28)';
+  ctx.lineWidth = Math.max(2, s * 0.6);
+  const streaks = Math.max(5, Math.floor(halfW / 10));
   for (let i = 0; i < streaks; i += 1) {
     const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76;
     if (!inCluster(fx)) continue; // no streaks in the gaps: the rain breaks with the bank
@@ -500,7 +562,7 @@ function drawSquall(ctx, v, sq, t) {
     ctx.translate(base.x + gfx * halfW, seaY);
     ctx.scale(1, 0.07);
     const spot = ctx.createRadialGradient(0, 0, 2, 0, 0, halfW * 0.17);
-    spot.addColorStop(0, 'rgba(206,196,210,0.12)');
+    spot.addColorStop(0, 'rgba(206,196,210,0.18)');
     spot.addColorStop(1, 'rgba(206,196,210,0)');
     ctx.fillStyle = spot;
     ctx.beginPath();
@@ -627,6 +689,30 @@ function drawStorm(ctx, v, storm, t) {
     const py = seaY + fz * R * 0.085;
     const len = R * (0.015 + grain(i, 83) * 0.025);
     ctx.globalAlpha = Math.min(0.14, (0.06 + grain(i, 84) * 0.05) * shaftBoostPre);
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + len * 0.35, py + len);
+    ctx.stroke();
+  }
+  // V15: the ring above still wastes most of its dashes off-frame
+  // and above the sea line — 11 of them land in the bottom-right
+  // corner (V15 audit problem 9). A bottom-band frame-biased
+  // stipple: sample the screen point in the visible bottom band
+  // and invert through the cell geometry (fx = (px−cx)/R,
+  // fz = (py−seaY)/(R×0.085)), kept only inside the annulus and
+  // outside the bottom instrument panel — every kept dash lands
+  // in the visible bottom band. Same slant, length and alpha as
+  // the ring above; the 240-dash loop is unchanged.
+  for (let i = 0; i < 60; i += 1) {
+    const px = 4 + grain(i, 111) * 1272;
+    const py = 700 + grain(i, 112) * 96;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    const fx = (px - cx) / R;
+    const fz = (py - seaY) / (R * 0.085);
+    const d2 = fx * fx * 0.8 + fz * fz;
+    if (d2 < 1.15 || d2 > 9.4) continue;
+    const len = R * (0.015 + grain(i, 113) * 0.025);
+    ctx.globalAlpha = Math.min(0.14, (0.06 + grain(i, 114) * 0.05) * shaftBoostPre);
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + len * 0.35, py + len);
@@ -895,6 +981,26 @@ function drawStorm(ctx, v, storm, t) {
       baseY - bodySpan * fy,
       fr * R,
       lit ? 'rgba(122,96,128,0.42)' : 'rgba(30,26,48,0.36)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
+  }
+  // V15 rev: the first render's 10 puffs read as pale discs —
+  // bokeh bubbles floating over the cloud, not grain (measured
+  // in the 2× shoulder crop: distinct round discs at 0.50/0.45
+  // alpha, 35–70 px radius). A mottle needs finer, softer marks
+  // that overlap instead of standing alone: 24 puffs, radius
+  // 0.03–0.055R, lit 0.30 / dark 0.32, same visible band.
+  for (let i = 0; i < 24; i += 1) {
+    const fx = -0.20 + (i / 23) * 0.25 + (grain(i, 101) - 0.5) * 0.05;
+    const fy = 0.25 + grain(i, 102) * 0.40;
+    const fr = 0.03 + grain(i, 103) * 0.025;
+    const lit = i % 2 === 0;
+    softPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      fr * R,
+      lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.32)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
@@ -2170,22 +2276,39 @@ function drawPalm(ctx, v, x, y, z, s) {
     ctx.beginPath();
     ctx.ellipse(tx - h * 0.09, ty - h * 0.08, h * 0.30, h * 0.18, 0, 0, Math.PI * 2);
     ctx.fill();
+    // V15 rev: the crown is still one flat tone under the lit cap
+    // (2× delivery crop) — two small mid-tone ellipses break the
+    // disc into a mottled mass, hashed per palm so no two crowns
+    // carry the same patches.
+    ctx.fillStyle = '#356b47';
+    ctx.beginPath();
+    ctx.ellipse(tx + (ph(9, 45) - 0.5) * h * 0.3, ty - h * 0.02, h * 0.16, h * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#265231';
+    ctx.beginPath();
+    ctx.ellipse(tx - (ph(9, 46) - 0.5) * h * 0.3, ty + h * 0.10, h * 0.14, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
+  // V15 rev: the first render's fronds were still thin lines
+  // sticking out sideways past the crown (2× delivery crop) —
+  // shorter, thicker, denser, drooping deeper, so they read as
+  // foliage mass hugging the crown instead of spider legs. The
+  // middle three of nine arc over the top (0.85), as before.
   ctx.strokeStyle = '#2f6b46';
-  ctx.lineWidth = Math.max(1.3, base.s * 0.13);
-  for (let i = 0; i < 7; i += 1) {
-    const a = Math.PI * (0.05 + i * 0.155);
+  ctx.lineWidth = Math.max(2.2, base.s * 0.24);
+  for (let i = 0; i < 9; i += 1) {
+    const a = Math.PI * (0.05 + i * 0.115);
     const ox = tx + (ph(i, 41) - 0.5) * h * 0.30;
-    const oy = ty - h * 0.02 + ph(i, 42) * h * 0.04;
-    const len = h * (0.55 + ph(i, 43) * 0.30);
-    const droop = h * (0.22 + ph(i, 44) * 0.20);
+    const oy = ty - h * 0.10 + ph(i, 42) * h * 0.03;
+    const len = h * (0.34 + ph(i, 43) * 0.18);
+    const droop = h * (0.34 + ph(i, 44) * 0.20);
     // V14: every frond peaked below the crown's top edge, so no
     // frond ever broke the silhouette and the crown read as a disc
     // (V14 audit problem 3). The three middle fronds arc over the
     // top now (control factor 0.85, peaks ~ty − 0.32h); the side
     // fronds keep the old low arc.
-    const arc = (i >= 2 && i <= 4) ? 0.85 : 0.30;
+    const arc = (i >= 3 && i <= 5) ? 0.85 : 0.30;
     ctx.beginPath();
     ctx.moveTo(ox, oy);
     ctx.quadraticCurveTo(ox + Math.cos(a) * len * 0.5, oy - Math.sin(a) * len * arc, ox + Math.cos(a) * len, oy + droop);
