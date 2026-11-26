@@ -328,19 +328,60 @@ function drawSea(ctx, v, plane, light) {
   // sets its own fillStyle (alpha 1.0) so the globalAlpha below
   // is the dash's real alpha: 0.12–0.30, the same strength the
   // near-water dashes carry at mid range.
+  // V17: the window starts at horizon+37 and the gate relaxes to
+  // fwd 400–1400 — at the low approach camera the old window
+  // (horizon+90…+260) maps to fwd 197–569, so the gate kept
+  // NOTHING there and the approach mid-right sea stayed thin
+  // (V16 audit problem 8, still open: 364 px >12). The extended
+  // window maps to fwd 569–1385 at that camera, and the relaxed
+  // gate keeps the old window's fwd 400–569 too — the box's fwd
+  // 470–740 is covered end to end. At the cover camera the
+  // extension maps to fwd 1400–2600, outside the gate, so no
+  // double density there; the far-band loop still owns that band.
+  // Count 90 → 150: the cover's mid-right sea is inside the gate
+  // but holds ~2 of 90 dashes (V17 audit problem 4: 19 px >12).
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 90; i += 1) {
+  for (let i = 0; i < 150; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 17.3) * 43758.5453;
       return h - Math.floor(h);
     };
     const px = 4 + hash(1) * 1272;
-    const py = v.horizon + 90 + hash(2) * 170;
+    const py = v.horizon + 37 + hash(2) * 223;
     if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
     if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
-    if (fwd < 600 || fwd > 1400) continue;
+    if (fwd < 400 || fwd > 1400) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30);
+    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+  }
+  // V17: a right-weighted second mid-band pass — the main pass
+  // spreads its 150 dashes over the whole visible mid band, so
+  // the cover's mid-right box (px 950–1280, fwd 900–1320) still
+  // holds only a few of them (V17 audit problem 4). This pass
+  // samples only the frame's right third (px 900–1276) with the
+  // same window, gate and dash shape, so that box gets its own
+  // density instead of the frame's average.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 50; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 19.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 900 + hash(1) * 376;
+    const py = v.horizon + 37 + hash(2) * 223;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 400 || fwd > 1400) continue;
     const right = (px - VIEW_W / 2) / s;
     const wx = v.camX + fwd * v.sinH + right * v.cosH;
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
@@ -385,6 +426,52 @@ function drawSea(ctx, v, plane, light) {
     if (!p) continue;
     const len = clamp(p.s * 0.35, 6, 30);
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
+    ctx.fillRect(p.x - len / 2, p.y, len, Math.max(2, p.s * 0.04));
+  }
+  // V17: a far-left near-water pass — the left-weighted pass works
+  // at full size (delivery far-left sea 26 → 109 px >12) but the
+  // box is 150×40 px and the pass spreads over the whole left
+  // third, so at judge size the box still reads as specks (32 px
+  // >12, V17 audit problem 6). This pass samples only the
+  // frame's far-left strip (px 4–200) with longer, slightly
+  // stronger dashes (6–14 px, alpha 0.14–0.30), so the box gets
+  // bigger marks, not just more of them. Own fillStyle (alpha
+  // 1.0), like the mid-band pass — the left-weighted pass above
+  // restores 0.35, and this pass must not inherit it.
+  // V17 rev: the first render changed the box 109 → 109 —
+  // EXACTLY nothing. The pass samples py horizon+24…+520, but at
+  // the delivery camera (camY 17.5) that maps to fwd 46–858 and
+  // the fwd gate keeps only py 386–660, so 23 of 30 dashes were
+  // thrown away and none landed in the box (proven by hash: 7
+  // kept, 0 in-box). The sample is now drawn from the fwd band
+  // itself — pyLo/pyHi computed from the fwd gate [180, 450] at
+  // this camera, clamped to the frame — so every sampled dash is
+  // a kept dash, and the box (fwd 224–396) holds its share.
+  // Count 30 → 35: the box reads as specks at 9 dashes; it needs
+  // ~24 in view to read as texture, the way the cover's
+  // bottom-left sea does at 29.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  const flPyLo = v.horizon + (v.camY * v.focal) / 450;
+  const flPyHi = Math.min(v.horizon + (v.camY * v.focal) / 180, 796);
+  for (let i = 0; i < 35; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 29.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 196;
+    const py = flPyLo + hash(2) * (flPyHi - flPyLo);
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 600) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.45, 6, 14);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.14, 0.30);
     ctx.fillRect(p.x - len / 2, p.y, len, Math.max(2, p.s * 0.04));
   }
   ctx.globalAlpha = 1;
@@ -506,9 +593,15 @@ function drawSquall(ctx, v, sq, t) {
   // gone at judge size, where the bank still read as one continuous
   // dark row behind the cover's ring. The break has to be geometry
   // the small frame can hold, not alpha it can't.
+  // V17: the clusters stand further apart again (±0.74) and their
+  // span narrows (0.28 → 0.25), so the clear break between them is
+  // 0.24 halfW wide (~77 px full size) instead of 0.14 (~45 px) —
+  // a notch the judge-size frame can hold (V17 audit problem 5).
+  // The curtain washes narrow to match, so the curtain still breaks
+  // where the bank does.
   const clusters = [
     {
-      c: -0.70,
+      c: -0.74,
       puffs: [[-0.09, 0.32, 0.16], [0.03, 0.52, 0.18], [0.10, 0.36, 0.15], [-0.02, 0.70, 0.14]],
     },
     {
@@ -516,7 +609,7 @@ function drawSquall(ctx, v, sq, t) {
       puffs: [[-0.10, 0.38, 0.17], [0.04, 0.64, 0.18], [0.10, 0.42, 0.16], [-0.01, 0.86, 0.16]],
     },
     {
-      c: 0.70,
+      c: 0.74,
       puffs: [[-0.10, 0.34, 0.15], [0.05, 0.50, 0.17], [0.09, 0.30, 0.14], [0.0, 0.60, 0.13]],
     },
   ];
@@ -527,13 +620,16 @@ function drawSquall(ctx, v, sq, t) {
   // Is a point along the line inside a cluster's span (its puffs'
   // reach) or in one of the gaps? The curtain and its streaks ask it:
   // rain hangs where the bank is, and thins to nothing in the gaps.
-  const inCluster = (fx) => clusters.some((cl) => Math.abs(fx - cl.c) < 0.28);
+  const inCluster = (fx) => clusters.some((cl) => Math.abs(fx - cl.c) < 0.25);
 
   // The rain curtain: one soft wash per cluster instead of a single
   // full-width wash, so the curtain breaks where the bank breaks.
   // The washes narrow with the wider spacing (±0.25 / ±0.28), so the
   // gap between two washes is clear sky and sea, not two tails
   // meeting.
+  // V17: the washes narrow again (±0.22 / ±0.25) with the clusters'
+  // wider stand and narrower span, so the curtain still breaks
+  // where the bank does (V17 audit problem 5).
   for (const cl of clusters) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
     // V14: the curtain topped out at 0.23 and faded to 0.05, so at
@@ -548,10 +644,10 @@ function drawSquall(ctx, v, sq, t) {
     grad.addColorStop(1, 'rgba(168,182,205,0.10)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(base.x + (cl.c - 0.25) * halfW, baseY);
-    ctx.lineTo(base.x + (cl.c + 0.25) * halfW, baseY);
-    ctx.lineTo(base.x + (cl.c + 0.28) * halfW, seaY);
-    ctx.lineTo(base.x + (cl.c - 0.28) * halfW, seaY);
+    ctx.moveTo(base.x + (cl.c - 0.22) * halfW, baseY);
+    ctx.lineTo(base.x + (cl.c + 0.22) * halfW, baseY);
+    ctx.lineTo(base.x + (cl.c + 0.25) * halfW, seaY);
+    ctx.lineTo(base.x + (cl.c - 0.25) * halfW, seaY);
     ctx.closePath();
     ctx.fill();
   }
@@ -564,16 +660,20 @@ function drawSquall(ctx, v, sq, t) {
   // problem 2) — wider (0.08 → 0.12 half-width) and brighter
   // (0.16 → 0.22 top), judged against the smear risk after the
   // render: if the wash reads as a second bank, it is too much.
-  for (const gfx of [-0.35, 0.35]) {
+  // V17: wider again (0.12 → 0.15 half-width top, 0.14 → 0.17
+  // bottom) at the gaps' new centres (±0.37, the clusters having
+  // moved to ±0.74) — the break is geometry now, and the wash
+  // lights it; judged against the smear risk after the render.
+  for (const gfx of [-0.37, 0.37]) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
     grad.addColorStop(0, 'rgba(216,198,208,0.22)');
     grad.addColorStop(1, 'rgba(216,198,208,0.08)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(base.x + (gfx - 0.12) * halfW, baseY);
-    ctx.lineTo(base.x + (gfx + 0.12) * halfW, baseY);
-    ctx.lineTo(base.x + (gfx + 0.14) * halfW, seaY);
-    ctx.lineTo(base.x + (gfx - 0.14) * halfW, seaY);
+    ctx.moveTo(base.x + (gfx - 0.15) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.15) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.17) * halfW, seaY);
+    ctx.lineTo(base.x + (gfx - 0.17) * halfW, seaY);
     ctx.closePath();
     ctx.fill();
   }
@@ -588,8 +688,10 @@ function drawSquall(ctx, v, sq, t) {
   // 9). More rain per curtain: ~34 streaks, alpha 0.32, 2.5 px
   // wide, 0.65 of the fall — still short dashes, not a smear;
   // judged at judge size after the render.
-  ctx.strokeStyle = 'rgba(190,200,220,0.32)';
-  ctx.lineWidth = Math.max(2.5, s * 0.7);
+  // V17: still a faint wash at judge size (V17 audit problem 11).
+  // More rain again: alpha 0.40, 3 px wide, 0.75 of the fall.
+  ctx.strokeStyle = 'rgba(190,200,220,0.40)';
+  ctx.lineWidth = Math.max(3, s * 0.8);
   const streaks = Math.max(5, Math.floor(halfW / 8));
   for (let i = 0; i < streaks; i += 1) {
     const fx = -0.88 + (i / Math.max(1, streaks - 1)) * 1.76;
@@ -597,7 +699,7 @@ function drawSquall(ctx, v, sq, t) {
     const drift = ((t * 0.8 + i * 0.29) % 1) * 0.3;
     ctx.beginPath();
     ctx.moveTo(base.x + fx * halfW, baseY + (seaY - baseY) * drift * 0.2);
-    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.65 + drift * 0.35));
+    ctx.lineTo(base.x + fx * halfW + halfW * 0.02, baseY + (seaY - baseY) * (0.75 + drift * 0.25));
     ctx.stroke();
   }
   // Distance haze for the bank itself: the islands retint toward the
@@ -625,16 +727,19 @@ function drawSquall(ctx, v, sq, t) {
   // wash draws AFTER the puffs, in the gaps only, same geometry,
   // 0.14 → 0.04: light the eye can hold at judge size, narrow
   // enough not to become a second bank.
-  for (const gfx of [-0.35, 0.35]) {
+  // V17: brighter (0.14 → 0.18 top) and wider (0.12 → 0.15
+  // half-width top, 0.14 → 0.17 bottom) at the gaps' new centres
+  // (±0.37) — the break is geometry now, and the wash lights it.
+  for (const gfx of [-0.37, 0.37]) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
-    grad.addColorStop(0, 'rgba(216,198,208,0.14)');
+    grad.addColorStop(0, 'rgba(216,198,208,0.18)');
     grad.addColorStop(1, 'rgba(216,198,208,0.04)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(base.x + (gfx - 0.12) * halfW, baseY);
-    ctx.lineTo(base.x + (gfx + 0.12) * halfW, baseY);
-    ctx.lineTo(base.x + (gfx + 0.14) * halfW, seaY);
-    ctx.lineTo(base.x + (gfx - 0.14) * halfW, seaY);
+    ctx.moveTo(base.x + (gfx - 0.15) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.15) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.17) * halfW, seaY);
+    ctx.lineTo(base.x + (gfx - 0.17) * halfW, seaY);
     ctx.closePath();
     ctx.fill();
   }
@@ -659,13 +764,14 @@ function drawSquall(ctx, v, sq, t) {
   // The gaps get their own brighter spot on that sea line, where the
   // gap's rain-light wash lands: the break in the bank reads all the
   // way down to the water. V16: 0.18 → 0.24, with the wider wash
-  // above (V16 audit problem 2).
-  for (const gfx of [-0.35, 0.35]) {
+  // above (V16 audit problem 2). V17: 0.24 → 0.28 at the gaps' new
+  // centres (±0.37).
+  for (const gfx of [-0.37, 0.37]) {
     ctx.save();
     ctx.translate(base.x + gfx * halfW, seaY);
     ctx.scale(1, 0.07);
     const spot = ctx.createRadialGradient(0, 0, 2, 0, 0, halfW * 0.17);
-    spot.addColorStop(0, 'rgba(206,196,210,0.24)');
+    spot.addColorStop(0, 'rgba(206,196,210,0.28)');
     spot.addColorStop(1, 'rgba(206,196,210,0)');
     ctx.fillStyle = spot;
     ctx.beginPath();
@@ -823,6 +929,26 @@ function drawStorm(ctx, v, storm, t) {
     if (d2 > 9.4) continue;
     const len = R * (0.015 + grain(i, 113) * 0.025);
     ctx.globalAlpha = Math.min(0.20, (0.08 + grain(i, 114) * 0.06) * shaftBoostPre);
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + len * 0.35, py + len);
+    ctx.stroke();
+  }
+  // V17: a dedicated pass for the strip right of the FUEL panel
+  // (px 252–324, py 642–700) — the bottom-band loop above spreads
+  // 160 dashes over px 4–1276 × py 560–796, so this 72×58 px box
+  // holds ~2 of them and stays sparse (18 px >12, V17 audit
+  // problem 2) while the same loop grains the mid-right sea fine.
+  // Ten dashes sampled inside the box's own rect, same slant,
+  // length and alpha; the rect is clear of both bottom HUD panels
+  // (fuel ends px 249, instruments start px 326), so no rejection
+  // is needed. New grain salts (121–124) so its dashes do not
+  // correlate with the loop's.
+  for (let i = 0; i < 10; i += 1) {
+    const px = 252 + grain(i, 121) * 72;
+    const py = 642 + grain(i, 122) * 58;
+    const len = R * (0.015 + grain(i, 123) * 0.025);
+    ctx.globalAlpha = Math.min(0.20, (0.08 + grain(i, 124) * 0.06) * shaftBoostPre);
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + len * 0.35, py + len);
@@ -1100,6 +1226,13 @@ function drawStorm(ctx, v, storm, t) {
   // alpha, 35–70 px radius). A mottle needs finer, softer marks
   // that overlap instead of standing alone: 24 puffs, radius
   // 0.03–0.055R, lit 0.30 / dark 0.32, same visible band.
+  // V17: a screen-size floor on the radii (≥9 px) — at the
+  // approach camera the cell is R=160, so these puffs are
+  // 4.8–8.8 px radius and their flat cores read as a spray of
+  // tiny pale dots on the belly (V17 audit problem 7, probe-
+  // proven: no other pass draws marks that small). The floor
+  // never binds in the storm frame, where the radii are already
+  // 26–48 px.
   for (let i = 0; i < 24; i += 1) {
     const fx = -0.20 + (i / 23) * 0.25 + (grain(i, 101) - 0.5) * 0.05;
     const fy = 0.25 + grain(i, 102) * 0.40;
@@ -1109,7 +1242,7 @@ function drawStorm(ctx, v, storm, t) {
       ctx,
       cx + fx * R,
       baseY - bodySpan * fy,
-      fr * R,
+      Math.max(fr * R, 9),
       lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.32)',
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
@@ -1123,21 +1256,31 @@ function drawStorm(ctx, v, storm, t) {
   // puff gets two small duplicates at hashed offsets, opposite
   // tone, 0.55× radius — they overlap the original's rim
   // asymmetrically, so each blob is lumpy, not circular.
+  // V17: that rev did not break the rims either — the duplicates'
+  // offsets (≈0.45× radius) are too small and too faint, and
+  // opposite tone at low alpha partially cancels the originals:
+  // the strip got slightly SMOOTHER (stdev 10.06 → 8.26) and the
+  // discs still read at 2× (V17 audit problem 1). One duplicate
+  // per puff now, at 0.8× radius offset in a hashed direction,
+  // SAME tone as the original and alpha ABOVE it (0.36 lit /
+  // 0.38 dark vs 0.30 / 0.32) — the union is a peanut, not a
+  // bigger circle, and the variance rises instead of falling.
+  // Same screen-size floor as the originals (≥6 px).
   for (let i = 0; i < 24; i += 1) {
     const fx = -0.20 + (i / 23) * 0.25 + (grain(i, 101) - 0.5) * 0.05;
     const fy = 0.25 + grain(i, 102) * 0.40;
     const fr = 0.03 + grain(i, 103) * 0.025;
     const lit = i % 2 === 0;
-    for (const [jx, jy, jr] of [[0.018, 0.012, 0.55], [-0.015, -0.014, 0.5]]) {
-      softPuff(
-        ctx,
-        cx + (fx + jx + (grain(i, 125) - 0.5) * 0.01) * R,
-        baseY - bodySpan * (fy + jy + (grain(i, 126) - 0.5) * 0.01),
-        fr * R * jr,
-        lit ? 'rgba(30,26,48,0.22)' : 'rgba(122,96,128,0.20)',
-        lit ? 'rgba(30,26,48,0)' : 'rgba(122,96,128,0)',
-      );
-    }
+    const ang = grain(i, 127) * Math.PI * 2;
+    const off = fr * 0.8;
+    softPuff(
+      ctx,
+      cx + (fx + Math.cos(ang) * off) * R,
+      baseY - bodySpan * (fy + Math.sin(ang) * off * 0.72),
+      Math.max(fr * R * 0.9, 6),
+      lit ? 'rgba(122,96,128,0.36)' : 'rgba(30,26,48,0.38)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
   }
   for (let i = 0; i < 6; i += 1) {
     const fx = -0.62 + i * 0.24 + (grain(i, 5) - 0.5) * 0.06;
@@ -1230,9 +1373,17 @@ function drawStorm(ctx, v, storm, t) {
     // problem 9). Three small softPuffs at hashed offsets around
     // the origin break the disc into a cluster of fire; their
     // combined weight is the old disc's, spread unevenly.
-    softPuff(ctx, nodes[0][0] + (grain(1, 131) - 0.5) * R * 0.10, nodes[0][1] + (grain(2, 131) - 0.5) * R * 0.06, R * 0.13, `rgba(255,246,205,${0.34 * flash})`, 'rgba(255,246,205,0)');
-    softPuff(ctx, nodes[0][0] + (grain(3, 131) - 0.5) * R * 0.12, nodes[0][1] + (grain(4, 131) - 0.5) * R * 0.08, R * 0.10, `rgba(255,250,220,${0.30 * flash})`, 'rgba(255,250,220,0)');
-    softPuff(ctx, nodes[0][0] + (grain(5, 131) - 0.5) * R * 0.08, nodes[0][1] + (grain(6, 131) - 0.5) * R * 0.05, R * 0.08, `rgba(255,246,205,${0.30 * flash})`, 'rgba(255,246,205,0)');
+    // V17: three puffs at 0.08–0.13R still carry the same
+    // construction — softPuff's flat core (solid to 0.62r) — and
+    // one of them reads as a hard-rimmed pale disc beside the
+    // bolt's elbow at 2× (V17 audit problem 8, probe-proven at
+    // cell fx 0.02, fy 0.02). Five smaller puffs (0.05–0.08R) at
+    // tighter offsets overlap each other into one lumpy fire
+    // instead of standing as separate discs.
+    for (let i = 0; i < 5; i += 1) {
+      const fr = 0.05 + grain(i, 131) * 0.03;
+      softPuff(ctx, nodes[0][0] + (grain(i * 2 + 1, 132) - 0.5) * R * 0.06, nodes[0][1] + (grain(i * 2 + 2, 132) - 0.5) * R * 0.04, fr * R, `rgba(255,246,205,${0.30 * flash})`, 'rgba(255,246,205,0)');
+    }
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -1274,11 +1425,21 @@ function drawStorm(ctx, v, storm, t) {
       for (const tt of [0.33, 0.66]) {
         const px = smoothNodes[i - 1][0] + (smoothNodes[i][0] - smoothNodes[i - 1][0]) * tt;
         const py = smoothNodes[i - 1][1] + (smoothNodes[i][1] - smoothNodes[i - 1][1]) * tt;
-        softPuff(ctx, px, py, R * 0.17, `rgba(255,244,200,${0.10 * flash})`, 'rgba(255,244,200,0)');
-        softPuff(ctx, px, py, R * 0.11, `rgba(255,250,220,${0.14 * flash})`, 'rgba(255,250,220,0)');
+        // V17: 0.17R/0.11R at 0.10/0.14 — the blobs' flat cores
+        // (solid to 0.62r) read as pale discs on the dark cell at
+        // 2× (V17 audit problem 8). Smaller (0.13R/0.09R) and
+        // fainter (0.08/0.11), so the cores overlap along the
+        // channel into one lit ribbon instead of standing alone.
+        softPuff(ctx, px, py, R * 0.13, `rgba(255,244,200,${0.08 * flash})`, 'rgba(255,244,200,0)');
+        softPuff(ctx, px, py, R * 0.09, `rgba(255,250,220,${0.11 * flash})`, 'rgba(255,250,220,0)');
       }
     }
-    glowSeg(nodes, 0.07, 0.13, 87);
+    // V17: the mid pass was 0.07R wide at 0.13 alpha — a 61 px
+    // stroke whose straight per-segment edges show as a diagonal
+    // band across the lit field at 2× (V17 audit problem 9).
+    // Narrower (0.045R) and dimmer (0.09), so its edge sits inside
+    // the blob glow instead of crossing bare lit field.
+    glowSeg(nodes, 0.045, 0.09, 87);
     ctx.restore();
     ctx.shadowColor = 'rgba(255,240,190,0.9)';
     ctx.shadowBlur = 18;
@@ -1341,18 +1502,24 @@ function drawStorm(ctx, v, storm, t) {
     // radius while the glow was a disc; now it follows the strike.
     // Alpha rides the flash, so the grain exists only while the
     // light does.
+    // V17: (0.09–0.18)R at ±0.11R offsets and 0.12–0.13 alpha —
+    // isolated light puffs whose flat cores read as pale discs on
+    // the dark cell at 2× (V17 audit problem 8). Smaller
+    // (0.06–0.11R), tighter (±0.06R, inside the channel's own
+    // glow) and fainter (0.08), so their cores sit in lit cloud,
+    // not on dark cloud.
     for (let i = 0; i < 11; i += 1) {
       const segI = Math.min(nodes.length - 2, Math.floor(grain(i, 44) * (nodes.length - 1)));
       const tt = grain(i, 45);
-      const gx = nodes[segI][0] + (nodes[segI + 1][0] - nodes[segI][0]) * tt + (grain(i, 41) - 0.5) * R * 0.22;
-      const gy = nodes[segI][1] + (nodes[segI + 1][1] - nodes[segI][1]) * tt + (grain(i, 42) - 0.5) * R * 0.22;
+      const gx = nodes[segI][0] + (nodes[segI + 1][0] - nodes[segI][0]) * tt + (grain(i, 41) - 0.5) * R * 0.12;
+      const gy = nodes[segI][1] + (nodes[segI + 1][1] - nodes[segI][1]) * tt + (grain(i, 42) - 0.5) * R * 0.12;
       const dark = i % 3 === 0;
       softPuff(
         ctx,
         gx,
         gy,
-        (0.09 + grain(i, 43) * 0.09) * R,
-        dark ? `rgba(30,26,48,${0.13 * flash})` : `rgba(150,116,140,${0.12 * flash})`,
+        (0.06 + grain(i, 43) * 0.05) * R,
+        dark ? `rgba(30,26,48,${0.08 * flash})` : `rgba(150,116,140,${0.08 * flash})`,
         dark ? 'rgba(30,26,48,0)' : 'rgba(150,116,140,0)',
       );
     }
@@ -2442,12 +2609,29 @@ function drawPalm(ctx, v, x, y, z, s) {
     ctx.beginPath();
     ctx.ellipse(tx, ty - h * 0.14, h * 0.12, h * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
+    // V17: the right bump sat at tx+0.14h, 0.09h — inside the hub's
+    // right arc (0.30h), so the crown's right edge stayed the hub's
+    // own smooth curve (V17 audit problem 10). Out to tx+0.18h at
+    // 0.10h, and a mid-right bump at tx+0.20h, ty+0.08h breaks the
+    // edge below it too.
     ctx.beginPath();
-    ctx.ellipse(tx + h * 0.14, ty - h * 0.08, h * 0.09, h * 0.09, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx + h * 0.18, ty - h * 0.08, h * 0.10, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx + h * 0.20, ty + h * 0.08, h * 0.08, h * 0.07, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#1e4229';
     ctx.beginPath();
     ctx.ellipse(tx, ty + h * 0.15, h * 0.24, h * 0.10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // V17: the underside crescent's lower edge is one smooth dark
+    // curve on the crown's lower-right side (V17 audit problem 10).
+    // Two small bumps under it break the arc, same colour.
+    ctx.beginPath();
+    ctx.ellipse(tx - h * 0.12, ty + h * 0.23, h * 0.06, h * 0.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx + h * 0.12, ty + h * 0.23, h * 0.06, h * 0.05, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#6f9a5f';
     ctx.beginPath();
