@@ -94,9 +94,16 @@ function drawSky(ctx, v, light, t) {
   glow.addColorStop(1, 'rgba(255,140,70,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(sunX - 250, sunY - 250, 500, 500);
-  ctx.fillStyle = '#ffd9a0';
+  // The disc's own rim fades over its outer quarter: a flat solid disc
+  // cut one clean circle against the sky — a sticker of a sun — however
+  // soft the shoulder outside it was made.
+  const disc = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 30);
+  disc.addColorStop(0, '#ffd9a0');
+  disc.addColorStop(0.72, '#ffd9a0');
+  disc.addColorStop(1, 'rgba(255,217,160,0)');
+  ctx.fillStyle = disc;
   ctx.beginPath();
-  ctx.arc(sunX, sunY, 27, 0, Math.PI * 2);
+  ctx.arc(sunX, sunY, 30, 0, Math.PI * 2);
   ctx.fill();
   // The sun's shoulder: a gradient out to nothing, not a second flat
   // disc — a flat r34 disc at alpha 0.35 over the r27 core left a hard
@@ -298,9 +305,15 @@ function drawSquall(ctx, v, sq, t) {
   // so the line has a silhouette, not a ruler edge. fx/fy below are
   // absolute once the cluster centre is added; fy is a fraction of
   // the body span, as the storm's own table reads.
+  // The clusters stand further apart in V9 (±0.70, puffs a touch
+  // smaller): at ±0.64 with washes ±0.30–0.33 wide the gaps between
+  // them were a few hundredths of the half-width — real at full size,
+  // gone at judge size, where the bank still read as one continuous
+  // dark row behind the cover's ring. The break has to be geometry
+  // the small frame can hold, not alpha it can't.
   const clusters = [
     {
-      c: -0.64,
+      c: -0.70,
       puffs: [[-0.09, 0.32, 0.16], [0.03, 0.52, 0.18], [0.10, 0.36, 0.15], [-0.02, 0.70, 0.14]],
     },
     {
@@ -308,31 +321,52 @@ function drawSquall(ctx, v, sq, t) {
       puffs: [[-0.10, 0.38, 0.17], [0.04, 0.64, 0.18], [0.10, 0.42, 0.16], [-0.01, 0.86, 0.16]],
     },
     {
-      c: 0.64,
+      c: 0.70,
       puffs: [[-0.10, 0.34, 0.15], [0.05, 0.50, 0.17], [0.09, 0.30, 0.14], [0.0, 0.60, 0.13]],
     },
   ];
   const puffs = [];
   for (const cl of clusters) {
-    for (const [lx, fy, fr] of cl.puffs) puffs.push([cl.c + lx, fy, fr]);
+    for (const [lx, fy, fr] of cl.puffs) puffs.push([cl.c + lx, fy, fr * 0.94]);
   }
   // Is a point along the line inside a cluster's span (its puffs'
   // reach) or in one of the gaps? The curtain and its streaks ask it:
   // rain hangs where the bank is, and thins to nothing in the gaps.
-  const inCluster = (fx) => clusters.some((cl) => Math.abs(fx - cl.c) < 0.31);
+  const inCluster = (fx) => clusters.some((cl) => Math.abs(fx - cl.c) < 0.28);
 
   // The rain curtain: one soft wash per cluster instead of a single
   // full-width wash, so the curtain breaks where the bank breaks.
+  // The washes narrow with the wider spacing (±0.25 / ±0.28), so the
+  // gap between two washes is clear sky and sea, not two tails
+  // meeting.
   for (const cl of clusters) {
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
     grad.addColorStop(0, 'rgba(168,182,205,0.23)');
     grad.addColorStop(1, 'rgba(168,182,205,0.05)');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(base.x + (cl.c - 0.30) * halfW, baseY);
-    ctx.lineTo(base.x + (cl.c + 0.30) * halfW, baseY);
-    ctx.lineTo(base.x + (cl.c + 0.33) * halfW, seaY);
-    ctx.lineTo(base.x + (cl.c - 0.33) * halfW, seaY);
+    ctx.moveTo(base.x + (cl.c - 0.25) * halfW, baseY);
+    ctx.lineTo(base.x + (cl.c + 0.25) * halfW, baseY);
+    ctx.lineTo(base.x + (cl.c + 0.28) * halfW, seaY);
+    ctx.lineTo(base.x + (cl.c - 0.28) * halfW, seaY);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Rain-light in the gaps: a pale wash hanging in each break, from
+  // the bank's base to the sea — the light that falls between two
+  // showers. A gap that is only absence reads as nothing at judge
+  // size; a gap with light in it reads as a break in weather, which
+  // is the squall's whole tactical story (a line you can time).
+  for (const gfx of [-0.35, 0.35]) {
+    const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
+    grad.addColorStop(0, 'rgba(216,198,208,0.10)');
+    grad.addColorStop(1, 'rgba(216,198,208,0.03)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(base.x + (gfx - 0.08) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.08) * halfW, baseY);
+    ctx.lineTo(base.x + (gfx + 0.10) * halfW, seaY);
+    ctx.lineTo(base.x + (gfx - 0.10) * halfW, seaY);
     ctx.closePath();
     ctx.fill();
   }
@@ -385,6 +419,22 @@ function drawSquall(ctx, v, sq, t) {
   ctx.arc(0, 0, halfW * 0.94, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  // The gaps get their own brighter spot on that sea line, where the
+  // gap's rain-light wash lands: the break in the bank reads all the
+  // way down to the water.
+  for (const gfx of [-0.35, 0.35]) {
+    ctx.save();
+    ctx.translate(base.x + gfx * halfW, seaY);
+    ctx.scale(1, 0.07);
+    const spot = ctx.createRadialGradient(0, 0, 2, 0, 0, halfW * 0.17);
+    spot.addColorStop(0, 'rgba(206,196,210,0.12)');
+    spot.addColorStop(1, 'rgba(206,196,210,0)');
+    ctx.fillStyle = spot;
+    ctx.beginPath();
+    ctx.arc(0, 0, halfW * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
   // Lightning, rarer and quieter than the cell's: a glow inside the bank
   // every seven seconds and no bolt — the line mutters where the cell cracks.
@@ -493,8 +543,16 @@ function drawStorm(ctx, v, storm, t) {
   // open sea in the storm frame and read as bands — at a third of the
   // core's alpha and pulled inboard, their edges sit under the lit
   // core instead of crossing bare water.
-  for (const [shrink, a] of [[-0.10, 0.010], [-0.045, 0.018], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]]) {
+  // Each layer slants by its own amount (×0.82…×1.17 across the six):
+  // at one shared slant the layers' straight edges were six parallel
+  // lines, and parallel lines are what the eye groups into bands —
+  // the storm frame's sea carried broad diagonal light bands, more
+  // god-ray than rain, however low each layer's alpha was set. The
+  // two widest layers are weaker again for the same reason: a wide
+  // layer's edge travels furthest across open water.
+  [[-0.10, 0.008], [-0.045, 0.014], [0, 0.045], [0.08, 0.06], [0.16, 0.075], [0.24, 0.09]].forEach(([shrink, a], li) => {
     const layerA = a * shaftBoost;
+    const lslant = slant * (0.82 + li * 0.07);
     const grad = ctx.createLinearGradient(0, baseY, 0, seaY);
     grad.addColorStop(0, `rgba(168,182,205,${layerA + 0.10 * shaftBoost})`);
     grad.addColorStop(1, `rgba(168,182,205,${layerA * 0.4})`);
@@ -502,11 +560,11 @@ function drawStorm(ctx, v, storm, t) {
     ctx.beginPath();
     ctx.moveTo(cx - R * (0.40 - shrink), baseY);
     ctx.lineTo(cx + R * (0.40 - shrink), baseY);
-    ctx.lineTo(cx + R * (0.48 - shrink) + slant, seaY);
-    ctx.lineTo(cx - R * (0.48 - shrink) + slant, seaY);
+    ctx.lineTo(cx + R * (0.48 - shrink) + lslant, seaY);
+    ctx.lineTo(cx - R * (0.48 - shrink) + lslant, seaY);
     ctx.closePath();
     ctx.fill();
-  }
+  });
   ctx.strokeStyle = `rgba(190,200,220,${0.15 * shaftBoost})`;
   ctx.lineWidth = Math.max(1, s * 0.35);
   for (let i = 0; i < 15; i += 1) {
@@ -552,6 +610,18 @@ function drawStorm(ctx, v, storm, t) {
   for (const [fx, fy, fr] of puffs) {
     softPuff(ctx, cx + fx * R, baseY - bodySpan * fy, fr * R * 1.12, 'rgba(33,29,50,0.88)', 'rgba(33,29,50,0)');
   }
+  // The belly itself gets a jittered duplicate at low alpha: V8
+  // jittered the two inner passes so their copies stopped aligning
+  // into contours, but the belly stayed one unjittered layout at
+  // alpha 0.88 — and in the approach frame's crop, at close range,
+  // its softPuffs' rims are exactly what the eye finds: a stack of
+  // discs, not one shadow. A second belly, hashed off the first by a
+  // few hundredths of R, breaks every rim it crosses.
+  puffs.forEach(([fx, fy, fr], idx) => {
+    const jx = (grain(idx, 61) - 0.5) * 0.08;
+    const jy = (grain(idx, 62) - 0.5) * 0.04;
+    softPuff(ctx, cx + (fx + jx) * R, baseY - bodySpan * (fy + jy), fr * R * 1.16, 'rgba(33,29,50,0.30)', 'rgba(33,29,50,0)');
+  });
   // The two inner passes are jittered per puff, hashed like the
   // clouds' own jitter: laid over the belly at fixed offsets and fixed
   // fractions of its radii (0.8, then 0.5 at 0.92 fx), the three copies
@@ -578,6 +648,13 @@ function drawStorm(ctx, v, storm, t) {
     const jr = 0.88 + grain(idx, 33) * 0.24;
     softPuff(ctx, cx + (fx * 0.92 + jx) * R, baseY - bodySpan * (fy + 0.01 + jy), fr * R * 0.5 * jr, 'rgba(17,14,29,0.34)', 'rgba(17,14,29,0)');
   });
+  // A unifying glaze over the body: one large soft puff of the
+  // belly's own colour at low alpha, laid over the belly, its jitter
+  // duplicate and the dark core — the passes composite into one mass
+  // under it, and any rim that survived the jitter melts into the
+  // whole. The rim light below draws after it, so the sun side keeps
+  // its lift.
+  softPuff(ctx, cx, baseY - bodySpan * 0.45, R * 1.02, 'rgba(33,29,50,0.16)', 'rgba(33,29,50,0)');
   for (const [fx, fy, fr] of puffs) {
     if (fy < 0.6) continue;
     softPuff(ctx, cx + (fx - 0.1) * R, baseY - bodySpan * (fy + 0.03), fr * R * 0.66, 'rgba(255,150,90,0.13)', 'rgba(255,150,90,0)');
@@ -636,6 +713,27 @@ function drawStorm(ctx, v, storm, t) {
       'rgba(255,150,90,0)',
     );
   }
+  // The east shoulder gets its own coarse grain row: the second pass
+  // above covers only the western outer half (fx −1.15…−0.10) and the
+  // anvil rim row stops at fx +0.58, so the mass's eastern edge — the
+  // edge the storm frame shows against lit sky — ended at the bare
+  // rims of the belly's edge puffs, a scalloped silhouette of bumps.
+  // Five coarse puffs out to fx +1.0 give that edge the same
+  // broken texture the west has.
+  for (let i = 0; i < 5; i += 1) {
+    const fx = 0.35 + (i / 4) * 0.65 + (grain(i, 71) - 0.5) * 0.08;
+    const fy = 0.72 + grain(i, 72) * 0.23;
+    const fr = 0.14 + grain(i, 73) * 0.10;
+    const lit = i % 3 === 1;
+    softPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      fr * R,
+      lit ? 'rgba(122,96,128,0.30)' : 'rgba(30,26,48,0.36)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
+  }
 
   // Lightning: a few frames of fire inside the upper cloud, and a bolt
   // standing in the rain shaft from the cloud base to the sea. The period
@@ -644,21 +742,16 @@ function drawStorm(ctx, v, storm, t) {
   const cycle = t % 2.9;
   if (cycle < 0.14) {
     const flash = 1 - cycle / 0.14;
-    // The flash lives inside the cloud: at R × 0.9 centred above the
-    // frame's top edge it was a centreless lift over the whole upper
-    // sky — half the storm frame's flat wash. At R × 0.5 centred in
-    // the upper mass it reads as fire in the cell, and the sky keeps
-    // its structure around it.
-    const glowY = topY + bodySpan * 0.42;
-    const glow = ctx.createRadialGradient(cx, glowY, 4, cx, glowY, R * 0.5);
-    glow.addColorStop(0, `rgba(255,244,200,${0.55 * flash})`);
-    glow.addColorStop(1, 'rgba(255,244,200,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(cx - R * 0.55, glowY - R * 0.55, R * 1.1, R * 1.1);
-    ctx.shadowColor = 'rgba(255,240,190,0.9)';
-    ctx.shadowBlur = 18;
-    // A bolt with a fork: one hairline zigzag read as a crack on the
-    // image; a thicker, branched strike reads as lightning.
+    // The bolt's nodes are computed first now, because the flash's
+    // light is shaped by the channel, not poured from a disc. Every
+    // radial glow this pass has tried — R × 0.9 above the frame, then
+    // R × 0.5 centred in the upper mass — laid one smooth pale wash
+    // over the storm frame's top-centre, the sheet's smoothest area,
+    // while the strike itself stood at the wash's edge lit by
+    // nothing. What a strike lights is the cloud around its own
+    // channel: a small fire where it leaves the cloud, and a soft
+    // wide stroke along the polyline itself. The top-centre goes back
+    // to the sky and the shoulder grain, which have texture.
     const nodes = [[cx + R * 0.12, baseY - bodySpan * 0.04]];
     for (let i = 1; i <= 4; i += 1) {
       nodes.push([
@@ -666,6 +759,29 @@ function drawStorm(ctx, v, storm, t) {
         nodes[i - 1][1] + (seaY - baseY) / 4,
       ]);
     }
+    const fire = ctx.createRadialGradient(nodes[0][0], nodes[0][1], 4, nodes[0][0], nodes[0][1], R * 0.30);
+    fire.addColorStop(0, `rgba(255,244,200,${0.50 * flash})`);
+    fire.addColorStop(1, 'rgba(255,244,200,0)');
+    ctx.fillStyle = fire;
+    ctx.fillRect(nodes[0][0] - R * 0.32, nodes[0][1] - R * 0.32, R * 0.64, R * 0.64);
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    for (const [gw, ga] of [[0.15, 0.10], [0.07, 0.13]]) {
+      ctx.strokeStyle = `rgba(255,244,200,${ga * flash})`;
+      ctx.lineWidth = Math.max(3, R * gw);
+      ctx.beginPath();
+      ctx.moveTo(nodes[0][0], nodes[0][1]);
+      for (let i = 1; i < nodes.length; i += 1) ctx.lineTo(nodes[i][0], nodes[i][1]);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.shadowColor = 'rgba(255,240,190,0.9)';
+    ctx.shadowBlur = 18;
+    // A bolt with a fork: one hairline zigzag read as a crack on the
+    // image; a thicker, branched strike reads as lightning. (The
+    // nodes are computed at the top of this block — the channel glow
+    // above is drawn along them.)
     // A wide, faint pass under the core — the bolt's body. At the old
     // max(2.4, s × 0.8) the core was a 2–3 px hairline and read as a
     // crack scratched on the cell, with the shadowBlur doing all the
@@ -705,17 +821,18 @@ function drawStorm(ctx, v, storm, t) {
         `rgba(255,240,190,${0.55 * flash})`, Math.max(1.1, Math.max(2.2, s * 0.7) * taper));
     }
     ctx.shadowBlur = 0;
-    // Grain over the flash: the glow above is one radial gradient, and
-    // at the frozen flash moment it laid a smooth pale wash over the
-    // frame's top-centre, erasing the shoulder texture V7 added
-    // exactly where the eye lands. A short hashed scatter of small
-    // cloud-toned puffs inside the glow's radius, drawn after the
+    // Grain over the flash: a short hashed scatter of small
+    // cloud-toned puffs along the bolt's channel, drawn after the
     // bolt, gives the lit field the cell's own mottling — the flash
-    // lights textured cloud, not fog. Alpha rides the flash, so the
-    // grain exists only while the light does.
+    // lights textured cloud, not fog. It followed the old disc glow's
+    // radius while the glow was a disc; now it follows the strike.
+    // Alpha rides the flash, so the grain exists only while the
+    // light does.
     for (let i = 0; i < 11; i += 1) {
-      const gx = cx + (grain(i, 41) - 0.5) * R * 0.85;
-      const gy = glowY + (grain(i, 42) - 0.5) * R * 0.55;
+      const segI = Math.min(nodes.length - 2, Math.floor(grain(i, 44) * (nodes.length - 1)));
+      const tt = grain(i, 45);
+      const gx = nodes[segI][0] + (nodes[segI + 1][0] - nodes[segI][0]) * tt + (grain(i, 41) - 0.5) * R * 0.22;
+      const gy = nodes[segI][1] + (nodes[segI + 1][1] - nodes[segI][1]) * tt + (grain(i, 42) - 0.5) * R * 0.22;
       const dark = i % 3 === 0;
       softPuff(
         ctx,
@@ -758,12 +875,22 @@ function drawCloud(ctx, v, c, stormDisc = null) {
   const shaded = stormDisc
     && Math.hypot(p.x - stormDisc.x, p.y - stormDisc.y) < stormDisc.r;
   const squash = 0.52;
+  // Range haze for the belly: the squall blends toward the dusk mauve
+  // as it recedes and the islands haze too, but a sky cloud kept its
+  // full night-violet at any distance — so at the horizon, against the
+  // bright orange sky, a far cloud's belly stamped as a dark disc on
+  // the sky/sea boundary, a dotted row of them along the cover's
+  // horizon. The belly now blends toward the mauve and eases its alpha
+  // with range, in the squall's own spirit; the lit tops are the
+  // light, and stay.
+  const hz = clamp((p.fwd - 1200) / 2600, 0, 0.4);
+  const bellyRgb = `${Math.round(74 + (138 - 74) * hz)},${Math.round(44 + (85 - 44) * hz)},${Math.round(86 + (112 - 86) * hz)}`;
   puffs.forEach(([ox, oy, r], i) => {
     const cxp = p.x + (ox + (jit(i, 1) - 0.5) * 0.09) * w;
     const cyp = p.y + (oy + (jit(i, 2) - 0.5) * 0.07) * w * spread;
     const rr = r * w * 0.62 * (0.86 + jit(i, 3) * 0.3);
-    const a = shaded ? 0.34 : 0.5 + jit(i, 4) * 0.14;
-    softPuff(ctx, cxp, cyp, rr, `rgba(74,44,86,${a})`, 'rgba(74,44,86,0)', squash);
+    const a = shaded ? 0.34 : (0.5 + jit(i, 4) * 0.14) * (1 - hz * 0.8);
+    softPuff(ctx, cxp, cyp, rr, `rgba(${bellyRgb},${a})`, `rgba(${bellyRgb},0)`, squash);
   });
   if (shaded) return;
   puffs.forEach(([ox, oy, r], i) => {
@@ -964,6 +1091,7 @@ function drawIsland(ctx, v, isl, t, light, world) {
     }
   }
 
+  if (isl.strip) drawApron(ctx, v, isl, toneLand);
   if (isl.strip) drawStrip(ctx, v, isl, t, world);
   if (isl.strip) drawHuts(ctx, v, isl, t);
   if (isl.strip) drawDepot(ctx, v, isl, tone, toneLand);
@@ -1230,6 +1358,65 @@ function projectClamped(v, wx, wy, wz) {
   };
 }
 
+/** The ground the strip sits in: a mown apron around the asphalt and a
+ *  service track out to the depot. The delivery frame's grass was one
+ *  flat value from the strip's edge to the frame's edge — V8's speckle
+ *  textures it at full size, but at judge size a speck is near the edge
+ *  of perception, and what a small frame can hold is a feature at the
+ *  strip's own scale. The apron is that feature: mown bands across a
+ *  frame wider and longer than the strip, drawn in slices like the
+ *  surface so it draws whole with the camera parked on it; the strip
+ *  (drawn next) covers its middle, and what shows is a striped border
+ *  of kept grass. The track is worn earth from the strip's east edge
+ *  to the depot's patch — before it, the patch floated on grass,
+ *  unconnected to the strip it serves. */
+function drawApron(ctx, v, isl, toneLand) {
+  const centre = project(v, isl.x, isl.h, isl.z);
+  if (!centre || centre.fwd > 1600) return;
+  const hw = isl.stripWid / 2;
+  const hl = isl.stripLen / 2;
+  const y = isl.h + 0.08;
+  let band = 0;
+  for (let d = -hl - 10; d < hl + 10; d += 12, band += 1) {
+    const a = projectClamped(v, isl.x - hw - 8, y, isl.z + d);
+    const b = projectClamped(v, isl.x + hw + 8, y, isl.z + d);
+    const c = projectClamped(v, isl.x + hw + 8, y, isl.z + d + 12);
+    const e = projectClamped(v, isl.x - hw - 8, y, isl.z + d + 12);
+    ctx.fillStyle = band % 2 === 0
+      ? hexA(toneLand('#55855e', '#263f2e'), 0.55)
+      : hexA(toneLand('#487a54', '#203a29'), 0.55);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.lineTo(e.x, e.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Two nested widths, so the track's edges feather the way the
+  // depot's own worn patch does. The depot stands at
+  // (stripWid/2 + 15, z + 21) — the track runs to its patch's edge.
+  const ty = isl.h * 0.99 + 0.05;
+  const tx0 = isl.x + hw + 0.5;
+  const tx1 = isl.x + hw + 14;
+  const tz = isl.z + 21;
+  for (const [tw, ta] of [[5.4, 0.22], [3.2, 0.45]]) {
+    const a = project(v, tx0, ty, tz - tw / 2);
+    const b = project(v, tx1, ty, tz - tw / 2);
+    const c = project(v, tx1, ty, tz + tw / 2);
+    const e = project(v, tx0, ty, tz + tw / 2);
+    if (!a || !b || !c || !e) continue;
+    ctx.fillStyle = hexA(toneLand('#8a6f4d', '#4a3a28'), ta);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.lineTo(e.x, e.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 function drawStrip(ctx, v, isl, t, world) {
   const hw = isl.stripWid / 2;
   const hl = isl.stripLen / 2;
@@ -1247,10 +1434,17 @@ function drawStrip(ctx, v, isl, t, world) {
   const centreP = project(v, isl.x, y, isl.z);
   const stripFwd = centreP ? centreP.fwd : 0;
   const markFade = clamp(1.2 - stripFwd / 1800, 0.45, 1);
+  // The surface and the clamped edge lines wear the fade too: V8
+  // faded the paint, but the surface stayed a constant mid-grey and
+  // the edges a constant cream at every range, so a far strip sat ON
+  // its hazed, darkened island as a pale patch instead of lying in
+  // it. The surface mixes toward a hazed mauve-grey as the markings
+  // fade, by the same factor.
+  const surfCol = mixc('#5d5648', '#565064', (1 - markFade) * 0.9);
   // The surface in slices along its length, so it draws whole even with the camera
   // parked on it — a single four-corner quad would vanish the moment a corner
   // slipped behind the lens.
-  ctx.fillStyle = '#5d5648';
+  ctx.fillStyle = surfCol;
   for (let d = -hl; d < hl; d += 12) {
     const a = projectClamped(v, isl.x - hw, y, isl.z + d);
     const b = projectClamped(v, isl.x + hw, y, isl.z + d);
@@ -1269,7 +1463,7 @@ function drawStrip(ctx, v, isl, t, world) {
   // camera is parked on it, where the four-corner outline below can never
   // project. Without them the surface is an edgeless slab and its edge
   // lights float on the grass with nothing to attach to.
-  ctx.strokeStyle = 'rgba(255,233,201,0.55)';
+  ctx.strokeStyle = `rgba(255,233,201,${0.55 * markFade})`;
   ctx.lineWidth = 1.2;
   for (const side of [-1, 1]) {
     ctx.beginPath();
@@ -1398,13 +1592,21 @@ function drawPalm(ctx, v, x, y, z, s) {
   const base = project(v, x, y, z);
   if (!base || base.s < 0.25) return;
   const h = 9 * s * base.s;
+  // The lean hashes from the palm's own position: every palm in the
+  // game used to lean at the same fixed +0.3h, so two palms in one
+  // frame leaned as a matched pair of bent wires, and at ground level
+  // the trunk's s × 0.1 weight was a hairline under the crown. The
+  // lean now varies palm to palm (0.18h–0.42h) and the trunk carries
+  // real width where a palm is large in frame.
+  const leanH = Math.sin(x * 12.9898 + z * 0.371) * 43758.5453;
+  const tipOff = h * (0.18 + (leanH - Math.floor(leanH)) * 0.24);
   ctx.strokeStyle = '#3a2c20';
-  ctx.lineWidth = Math.max(1, base.s * 0.1);
+  ctx.lineWidth = Math.max(1, base.s * (base.s > 2 ? 0.16 : 0.1));
   ctx.beginPath();
   ctx.moveTo(base.x, base.y);
-  ctx.quadraticCurveTo(base.x + h * 0.14, base.y - h * 0.6, base.x + h * 0.3, base.y - h);
+  ctx.quadraticCurveTo(base.x + tipOff * 0.45, base.y - h * 0.6, base.x + tipOff, base.y - h);
   ctx.stroke();
-  const tx = base.x + h * 0.3;
+  const tx = base.x + tipOff;
   const ty = base.y - h;
   // A crown body under the fronds: seven hairline arcs on a stick read
   // as a spider wherever the fronds are thin — and the old gate
