@@ -252,11 +252,23 @@ function drawBeacon(ctx, view, t) {
   ctx.ellipse(base.x, base.y, wdt * 1.5, wdt * 0.5, 0, 0, Math.PI * 2);
   ctx.stroke();
   if (base.s > 0.35) {
-    ctx.font = `700 ${clamp(base.s * 3, 11, 24)}px system-ui, sans-serif`;
+    const fontPx = clamp(base.s * 3, 11, 24);
+    ctx.font = `700 ${fontPx}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffe9c9';
     const label = m.kind === 'rings' ? 'NEXT RING' : m.kind === 'rescue' ? 'RESCUE — FLARE' : m.island ? m.island.name : '';
-    if (label) ctx.fillText(label, base.x, base.y - pillarH - 10);
+    if (label) {
+      // A dark backing pill, like the HUD's other labels carry: drawn
+      // bare, the name fought whatever terrain projected behind it —
+      // on approach it stacked unreadably over the island against the
+      // guidance ladder's own FINAL line naming the same island.
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = 'rgba(10,14,22,0.38)';
+      ctx.beginPath();
+      ctx.roundRect(base.x - tw / 2 - 8, base.y - pillarH - 10 - fontPx - 5, tw + 16, fontPx + 9, 6);
+      ctx.fill();
+      ctx.fillStyle = '#ffe9c9';
+      ctx.fillText(label, base.x, base.y - pillarH - 10);
+    }
   }
 }
 
