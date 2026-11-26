@@ -340,7 +340,7 @@ function drawSea(ctx, v, plane, light) {
   // the gate at high cameras (the cover camera keeps ~21 in its
   // py 354–365 strip instead of ~8).
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 120; i += 1) {
+  for (let i = 0; i < 180; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 9.4) * 43758.5453;
       return h - Math.floor(h);
@@ -355,14 +355,23 @@ function drawSea(ctx, v, plane, light) {
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
     const p = project(v, wx, 0, wz);
     if (!p) continue;
-    const len = clamp(p.s * 0.35, 4, 12);
     // V26 rev: the first render's dashes land (+213 px changed in the
     // approach y380–400 band) but at +7–11 levels — below the +12
     // metric and below the eye against the bright mauve horizon sea
     // (~128). The alpha floor lifts 0.10 → 0.18 and the cap 0.25 →
     // 0.35, so the far dashes read as light on the horizon water.
-    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.35);
-    ctx.fillRect(p.x - len / 2, p.y, len, 2);
+    // V27: the band is still below its guard (84 vs ≥150) and reads
+    // as salt dots at 2× — the remaining weakness is SHAPE, not
+    // brightness: every dash is the same 4–12 px × 2 px tick. The
+    // mid-band pass's wavelet variety (V24) reaches this loop now:
+    // hashed length (×0.6–2.2), height (1–3 px) and alpha
+    // (×0.7–1.3), count 120 → 150.
+    // V27 REVISION: the first render reached 141 — still 9 short
+    // of the guard. Count 150 → 180.
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.35) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
   // V16: a mid-band pass for the sea neither loop reaches — the
   // near-water pass gates fwd ≤ 600 and the far-band loop samples
@@ -644,6 +653,40 @@ function drawSea(ctx, v, plane, light) {
     if (!p) continue;
     // V24: dash variety, as in the mid-band pass above (V24 audit
     // problem 5) — the deep sea's uniform ticks read as salt at 2×.
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V27: a right-gap pass — the cover's lower-right sea carries a
+  // flat band at py 515–558, px 900–1280 (sd 1.87, 14 px >med+12 of
+  // 16,340, V27 audit problem 3): the V21 near pass ends at py 515
+  // and the V23 deep pass starts at py 558, and the near-water
+  // gate rejects py > ~470 at this camera. Same window shape as
+  // the deep pass, one band higher (py horizon+167…+210), gate
+  // fwd 40–70 (py 515 → fwd 60, py 558 → fwd 48 at the cover
+  // camera). Hash-proven before rendering (sea-probe27.mjs):
+  // 40/40 kept at the cover AND rescue cameras (same geometry,
+  // 34 of them inside the gap band), 0/40 at approach, delivery
+  // and storm — so the rescue right sea gains the same texture.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 40; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 73.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 850 + hash(1) * 430;
+    const py = v.horizon + 167 + hash(2) * 43;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 40 || fwd > 70) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
     const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
     const ht = 1 + Math.floor(hash(10) * 3);
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
@@ -1875,6 +1918,13 @@ function drawStorm(ctx, v, storm, t) {
     // R×0.075), so the light hugs the channel instead of pooling at
     // the head; the alphas and the fire stay, protecting the
     // flash-field sd (40.37, guard ≥39.5).
+    // V27 REVISION: the narrowing dimmed the field after all (sd
+    // 37.44, and the grain rebuild made it worse, 36.98 — reverted
+    // above). The halo guard has headroom (V26 measured 87/68 by
+    // ±45 px against ≤120), so the glow comes partway back: blobs
+    // R×0.10 → R×0.11 and R×0.075 → R×0.085, alphas 0.10 → 0.11
+    // and 0.13 → 0.145 — a brighter, slightly wider ribbon, still
+    // well inside V26's narrowing (0.13/0.09).
     for (let i = 1; i < smoothNodes.length; i += 1) {
       const headDim = i === 1 ? 0.6 : 1;
       for (const tt of [0.33, 0.66]) {
@@ -1889,8 +1939,8 @@ function drawStorm(ctx, v, storm, t) {
         // it burned at 0.30, so the light read as an orb detached from
         // the channel (V24 audit problem 9). Lifted to 0.10/0.13 so
         // the light continues down the strike.
-        softPuff(ctx, px, py, R * 0.10, `rgba(255,244,200,${0.10 * headDim * flash})`, 'rgba(255,244,200,0)');
-        softPuff(ctx, px, py, R * 0.075, `rgba(255,250,220,${0.13 * headDim * flash})`, 'rgba(255,250,220,0)');
+        softPuff(ctx, px, py, R * 0.11, `rgba(255,244,200,${0.11 * headDim * flash})`, 'rgba(255,244,200,0)');
+        softPuff(ctx, px, py, R * 0.085, `rgba(255,250,220,${0.145 * headDim * flash})`, 'rgba(255,250,220,0)');
       }
     }
     // V17: the mid pass was 0.07R wide at 0.13 alpha — a 61 px
@@ -1971,6 +2021,11 @@ function drawStorm(ctx, v, storm, t) {
     // (0.06–0.11R), tighter (±0.06R, inside the channel's own
     // glow) and fainter (0.08), so their cores sit in lit cloud,
     // not on dark cloud.
+    // V27 REVISION: the steepPuff rebuild above made the field
+    // SMOOTHER (sd 37.44 → 36.98 on the first render) — reverted
+    // to the V26 grain. The sd lever is the channel glow itself
+    // (see below): the V26 narrowing dimmed the field, and the
+    // glow's width/alpha is what sets the field's bright tail.
     for (let i = 0; i < 11; i += 1) {
       const segI = Math.min(nodes.length - 2, Math.floor(grain(i, 44) * (nodes.length - 1)));
       const tt = grain(i, 45);
@@ -2082,6 +2137,13 @@ function drawCloud(ctx, v, c, stormDisc = null) {
       squash,
     );
   }
+  // V27 REVERTED: a belly mottle for big clouds (w > 150) was tried
+  // twice for the smooth hero-cloud flank (V27 audit problem 6) —
+  // first a dark mottle (0 px changed in the tight box: the sample
+  // never reached the flank), then a widened dark+lit mottle
+  // (tight-box sd 12.27 → 12.33, 3 px changed). The flank is a
+  // single belly puff's smooth falloff and the mottle cannot reach
+  // it at any safe alpha; removed, the problem stands.
   if (shaded) return;
   // V19 rev: the first render's warm lit puffs (255,166,110) printed
   // as three separate pale discs along the cloud's top — the V12 cap
@@ -3351,6 +3413,17 @@ function drawLighthouse(ctx, v, isl, t) {
   // 7, measured: a 42-level step at y=410). Two more outer sectors at
   // frac 0.08 and 0.03 feather the edge into a ramp instead of a step.
   const pulse = 0.16 + 0.06 * Math.sin(t * 2.2);
+  // V27: six width-feather sectors (V22–V25) softened the fan across
+  // its width, but its lower edge still reads as a straight diagonal
+  // at 2× (V27 audit problem 7) — the fan ends on a line wherever it
+  // ends. The remaining lever is new: fade the fan along its LENGTH
+  // — a radial gradient from the lamp, full at the source, gone at
+  // the fan's reach — so the beam dissolves into the dusk before it
+  // reaches the sea instead of ending on an edge.
+  const beamGrad = ctx.createRadialGradient(base.x, lampY, 0, base.x, lampY, H * 2.4);
+  beamGrad.addColorStop(0, 'rgba(255,233,168,1)');
+  beamGrad.addColorStop(0.55, 'rgba(255,233,168,0.55)');
+  beamGrad.addColorStop(1, 'rgba(255,233,168,0)');
   for (const [a0, a1, frac] of [
     [beamA - 0.03, beamA + 0.24, 0.03],
     [beamA - 0.025, beamA + 0.23, 0.08],
@@ -3360,7 +3433,7 @@ function drawLighthouse(ctx, v, isl, t) {
     [beamA + 0.06, beamA + 0.13, 1.0],
   ]) {
     ctx.globalAlpha = pulse * frac;
-    ctx.fillStyle = '#ffe9a8';
+    ctx.fillStyle = beamGrad;
     ctx.beginPath();
     ctx.moveTo(base.x, lampY);
     ctx.arc(base.x, lampY, H * 2.4, a0, a1);
@@ -3466,10 +3539,14 @@ function drawBoat(ctx, v, b, t) {
   // steeper shade: a brighter sun side at the top, a darker water
   // side at the bottom. The strake, deck edge and waterline below
   // still draw on top.
+  // V27: the hull is still one flat orange tone mid-hull at 2×
+  // (V27 audit problem 9) — the V26 gradient (119 → 91) is smooth
+  // and linear. Steeper still (top 0.30 → 0.45, bottom 0.50 →
+  // 0.68), and the two bands that frame it stronger too.
   const hullShade = ctx.createLinearGradient(0, p.y - h * 0.5, 0, p.y + h * 0.5);
-  hullShade.addColorStop(0, 'rgba(255,240,220,0.30)');
+  hullShade.addColorStop(0, 'rgba(255,240,220,0.45)');
   hullShade.addColorStop(0.45, 'rgba(255,240,220,0)');
-  hullShade.addColorStop(1, 'rgba(20,30,34,0.50)');
+  hullShade.addColorStop(1, 'rgba(20,30,34,0.68)');
   ctx.fillStyle = hullShade;
   ctx.fill();
   // V23: the hull was one flat tone — a paper cutout at 2× (V23 audit
@@ -3481,7 +3558,7 @@ function drawBoat(ctx, v, b, t) {
   // V24: the strake (0.28) and deck edge (0.22) were still below the
   // eye against the saturated hull — at 2× the boat read as one flat
   // orange tone (V24 audit problem 11). Stronger: 0.45 / 0.35.
-  ctx.fillStyle = 'rgba(20,30,34,0.45)';
+  ctx.fillStyle = 'rgba(20,30,34,0.55)';
   ctx.beginPath();
   ctx.moveTo(p.x - bowSign * w * 0.34, p.y + h * 0.5);
   ctx.lineTo(p.x + bowSign * w * 0.30, p.y + h * 0.5);
@@ -3489,7 +3566,7 @@ function drawBoat(ctx, v, b, t) {
   ctx.lineTo(p.x - bowSign * w * 0.32, p.y + h * 0.28);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = 'rgba(255,240,220,0.35)';
+  ctx.fillStyle = 'rgba(255,240,220,0.50)';
   ctx.beginPath();
   ctx.moveTo(p.x - bowSign * w * 0.5, p.y - h * 0.5);
   ctx.lineTo(p.x + bowSign * w * 0.42, p.y - h * 0.5);
@@ -3555,6 +3632,12 @@ function drawBoat(ctx, v, b, t) {
     // (squash 0.45), its core steep so no rim closes (steepPuff's
     // solid area ends at 0.25r), drifting sideways as it rises and
     // fading with height. The flare star and glow are untouched.
+    // V27 REVERTED: two attempts to make the smoke read as wisps
+    // (V27 audit problem 8) — bigger/brighter, then smaller/
+    // brighter/concentrated. The smoke is PROVEN to draw (on/off
+    // render diff: 5,983 px changed in the smoke region, max delta
+    // 33) but stays too diffuse to resolve at 2× in either shape;
+    // restored to the V26 smoke, the problem stands.
     for (let i = 0; i < 4; i += 1) {
       const ph = (t * 0.22 + i / 4) % 1;
       const hh = Math.sin(i * 12.9898 + 3.7) * 43758.5453;
