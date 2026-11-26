@@ -184,7 +184,7 @@ function drawSea(ctx, v, plane, light) {
   }
   ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(220,245,245,0.35)';
-  for (let i = 0; i < 70; i += 1) {
+  for (let i = 0; i < 110; i += 1) {
     // Hashed placement, not modular: the old steps — (i × 613.7) %
     // 1500 in z, (i × 389.3) % 900 in x — are two arithmetic
     // progressions, and their points lie on lattice runs however
@@ -192,7 +192,7 @@ function drawSea(ctx, v, plane, light) {
     // run aligned into a dotted column descending the water, a
     // marker line instead of light (V10 audit problem 10). A
     // sin-hash of the index (the pattern this file uses for grain
-    // and jitter everywhere else) scatters the same 70 dashes over
+    // and jitter everywhere else) scatters the same 110 dashes over
     // the same ranges with no runs left to align.
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77) * 43758.5453;
@@ -203,7 +203,13 @@ function drawSea(ctx, v, plane, light) {
     const p = project(v, wx, 0, wz + hash(3) * 60);
     if (!p || p.y < v.horizon) continue;
     const len = clamp(p.s * 0.09, 2, 26);
-    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.05, 0.4);
+    // V12: the floor was 0.05 — at the storm camera the open sea is
+    // far water and the sparkle vanished into it, and the cover's
+    // sea left of the glitter column was one flat field (V12 audit
+    // problems 3 and 8). The floor is 0.10 now and the count is 110:
+    // the sea keeps some light everywhere without the glitter
+    // column coming back.
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.10, 0.4);
     ctx.fillRect(p.x - len / 2, p.y, len, Math.max(1, p.s * 0.012));
   }
   ctx.globalAlpha = 1;
@@ -534,6 +540,27 @@ function drawStorm(ctx, v, storm, t) {
     ctx.lineTo(px + len * 0.35, py + len);
     ctx.stroke();
   }
+  // The stipple stops at the shadow's rim, so the cell's weather
+  // ends in a clean circle and the open sea beyond it is polished
+  // — the storm frame's whole bottom-right quarter was one smooth
+  // wash (V12 audit problem 3). A sparse outer ring (1.1–2.4R) of
+  // the same slanted dashes at a lower alpha carries the rain out
+  // onto the open water; it adds texture, not a shape, and the
+  // annulus test keeps it off the shadow it extends.
+  for (let i = 0; i < 40; i += 1) {
+    const fx = (grain(i, 81) * 2 - 1) * 2.4;
+    const fz = (grain(i, 82) * 2 - 1);
+    const d2 = fx * fx * 0.8 + fz * fz;
+    if (d2 < 1.15 || d2 > 5.6) continue;
+    const px = cx + fx * R;
+    const py = seaY + fz * R * 0.085;
+    const len = R * (0.015 + grain(i, 83) * 0.025);
+    ctx.globalAlpha = Math.min(0.07, (0.03 + grain(i, 84) * 0.03) * shaftBoostPre);
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + len * 0.35, py + len);
+    ctx.stroke();
+  }
   ctx.globalAlpha = 1;
 
   // The rain shaft: a slanted curtain from the cloud base to the sea — the
@@ -628,15 +655,25 @@ function drawStorm(ctx, v, storm, t) {
       ctx.fill();
     }
   });
+  // The streaks were 0.55–0.75 of the fall long — at the storm
+  // frame's scale, 165–225 px straight diagonal scratches across
+  // the sea (V12 audit problem 4). Rain reads as broken dashes,
+  // not long rules: two staggered sets of short streaks, each
+  // ~0.30 of the fall, so no single dash runs more than a third
+  // of the column.
   ctx.strokeStyle = `rgba(190,200,220,${0.15 * shaftBoost})`;
   ctx.lineWidth = Math.max(1, s * 0.35);
-  for (let i = 0; i < 15; i += 1) {
-    const fx = -0.40 + i * 0.057;
-    const drift = ((t * 0.7 + i * 0.37) % 1) * 0.3;
-    ctx.beginPath();
-    ctx.moveTo(cx + fx * R, baseY + (seaY - baseY) * drift * 0.2);
-    ctx.lineTo(cx + fx * R + slant * (0.4 + drift), baseY + (seaY - baseY) * (0.55 + drift * 0.4));
-    ctx.stroke();
+  for (let set = 0; set < 2; set += 1) {
+    for (let i = 0; i < 12; i += 1) {
+      const fx = -0.40 + (i + set * 0.5) * 0.069;
+      const drift = ((t * 0.7 + (i + set * 6) * 0.37) % 1) * 0.3;
+      const t0 = 0.06 + set * 0.42 + drift * 0.2;
+      const t1 = t0 + 0.30;
+      ctx.beginPath();
+      ctx.moveTo(cx + fx * R, baseY + (seaY - baseY) * t0);
+      ctx.lineTo(cx + fx * R + slant * 0.45, baseY + (seaY - baseY) * t1);
+      ctx.stroke();
+    }
   }
 
   // Far weather beyond the shoulder: three very large, soft puffs of
@@ -1026,7 +1063,18 @@ function drawCloud(ctx, v, c, stormDisc = null) {
   // with range, in the squall's own spirit; the lit tops are the
   // light, and stay.
   const hz = clamp((p.fwd - 1200) / 2600, 0, 0.4);
-  const bellyRgb = `${Math.round(74 + (138 - 74) * hz)},${Math.round(44 + (85 - 44) * hz)},${Math.round(86 + (112 - 86) * hz)}`;
+  // V12: a cloud inside the storm's silhouette draws in the CELL's
+  // own belly colour, not the sky's. The shaded branch used the sky
+  // belly (74,44,86) at 0.34 — far lighter than the cell's near-black
+  // belly (33,29,50 at 0.88) — so a shaded cloud printed a lighter
+  // mauve oval inside the storm cell in the approach frame (V12
+  // audit problem 7). Proven by render diff on the V11 tree: the
+  // mid-pass probe left the oval unchanged, skipping shaded clouds
+  // removed it and darkened the belly (mean 53.3 → 47.0). In the
+  // cell's own tone the cloud adds mass to the storm instead of a
+  // patch on it.
+  const bellyRgb = shaded ? '33,29,50'
+    : `${Math.round(74 + (138 - 74) * hz)},${Math.round(44 + (85 - 44) * hz)},${Math.round(86 + (112 - 86) * hz)}`;
   puffs.forEach(([ox, oy, r], i) => {
     const voy = oy > 0.05 ? oy * 0.7 : oy;
     const cxp = p.x + (ox * mir * spreadK + (jit(i, 1) - 0.5) * 0.09) * w;
@@ -1035,6 +1083,22 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     const a = shaded ? 0.34 : (0.5 + jit(i, 4) * 0.14) * (1 - hz * 0.8);
     softPuff(ctx, cxp, cyp, rr, `rgba(${bellyRgb},${a})`, `rgba(${bellyRgb},0)`, squash);
   });
+  // A dark core low in the belly: six puffs of one belly colour left
+  // the hero clouds as smooth cushions with no interior at all (V12
+  // audit problem 2). Three darker puffs at hashed offsets, the
+  // storm body's own device, give the belly a shadow to hold. They
+  // use bellyRgb, so a shaded cloud's core is storm-coloured too.
+  for (let i = 0; i < 3; i += 1) {
+    softPuff(
+      ctx,
+      p.x + (jit(i, 51) - 0.5) * w * 0.5,
+      p.y + w * spread * (0.02 + jit(i, 52) * 0.08),
+      w * 0.28 * (0.85 + jit(i, 53) * 0.3),
+      `rgba(${shaded ? '33,29,50' : '52,32,62'},${(shaded ? 0.12 : 0.20) * (1 - hz * 0.8)})`,
+      `rgba(${shaded ? '33,29,50' : '52,32,62'},0)`,
+      squash,
+    );
+  }
   if (shaded) return;
   puffs.forEach(([ox, oy, r], i) => {
     const voy = oy > 0.05 ? oy * 0.7 : oy;
@@ -1044,13 +1108,18 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     softPuff(ctx, cxp, cyp, rr, `rgba(146,84,110,${0.30 + jit(i, 5) * 0.14})`, 'rgba(146,84,110,0)', squash);
   });
   if (big) {
+    // V12: the lit row sat at p.y − w × spread × 0.34 and spanned
+    // fx −0.44…0.44 — at the row's ends it poked above the belly top
+    // puff's silhouette, so the light read as a small cap floating
+    // on the cloud (V12 audit problem 2). Lowered and narrowed, the
+    // light sits inside the belly instead of on top of it.
     for (let i = 0; i < 5; i += 1) {
-      const fx = -0.44 + i * 0.22 + (jit(i, 21) - 0.5) * 0.07;
-      const rr = w * (0.10 + jit(i, 22) * 0.05);
+      const fx = -0.36 + i * 0.18 + (jit(i, 21) - 0.5) * 0.07;
+      const rr = w * (0.12 + jit(i, 22) * 0.05);
       softPuff(
         ctx,
         p.x + fx * w,
-        p.y - w * spread * 0.34 + (jit(i, 23) - 0.5) * w * 0.03,
+        p.y - w * spread * 0.26 + (jit(i, 23) - 0.5) * w * 0.03,
         rr,
         `rgba(255,166,110,${0.10 + jit(i, 24) * 0.07})`,
         'rgba(255,166,110,0)',
@@ -1080,7 +1149,13 @@ function drawIsland(ctx, v, isl, t, light, world) {
   // 6). The new curve gives 715 m a 0.113 wash and 1,000 m 0.26,
   // while the cover's ~440 m and the approach's ~330 m stay at
   // zero, so no frame that was right changes.
-  const haze = clamp((fwd - 500) / 1900, 0, 0.45);
+  // V12 deepens it one more safe step (450 m start, 1700 m run):
+  // 0.113 at 715 m was still gentle — Cahaya still read
+  // full-strength green in the storm frame (V12 audit problem 5).
+  // 715 m now takes 0.156 and 1,000 m 0.324, while the cover's
+  // ~440 m and the approach's ~330 m still sit below the start,
+  // so no frame that was right changes.
+  const haze = clamp((fwd - 450) / 1700, 0, 0.45);
   const dark = (1 - clamp(light, 0, 1)) * 0.75;
   // The ground darkens harder than the palette's other tones: at last light
   // the sky keeps its orange horizon while the land is already in night, and
@@ -1225,8 +1300,15 @@ function drawIsland(ctx, v, isl, t, light, world) {
         const p = project(v, wx, world.heightAt(wx, wz), wz);
         if (!p) continue;
         const r = clamp(p.s * 0.55, 0.7, 3.1);
-        ctx.fillStyle = sh(i, 3) > 0.72
-          ? hexA(toneLand('#7d9a63', '#33482e'), speckA * 0.8)
+        // V12: the pale tufts went through toneLand, whose darkLand
+        // is 0.71 at last light — they were dragged down to the
+        // land's own dusk tone and the speckle's contrast collapsed
+        // exactly where the delivery frame is darkest, leaving the
+        // off-apron grass one flat fill (V12 audit problem 9). The
+        // pale tufts now use tone() (dark 0.53, not darkLand 0.71)
+        // so they survive last light, and their share rises.
+        ctx.fillStyle = sh(i, 3) > 0.62
+          ? hexA(tone('#7d9a63', '#33482e'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
         ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -1625,11 +1707,13 @@ function drawApron(ctx, v, isl, toneLand) {
   };
   wornBand(7.2, 0.34, '#8a6f4d', '#4a3a28');
   wornBand(4.4, 0.50, '#9a7c56', '#54432e');
-  // The wheel lines: two dark ruts following the bend at ±1.15 m —
-  // the wear that says wheels, not weather, made this path.
-  for (const off of [1.15, -1.15]) {
-    ctx.strokeStyle = hexA(toneLand('#5f4a33', '#33281c'), 0.32);
-    ctx.lineWidth = Math.max(1, centre.s * 0.4);
+  // The wheel lines: two dark ruts following the bend at ±1.30 m —
+  // the wear that says wheels, not weather, made this path. V11's
+  // ruts (alpha 0.32, 1 px, mid-brown) landed faint and vanished at
+  // judge size (V12 audit problem 6): darker, half alpha, wider.
+  for (const off of [1.30, -1.30]) {
+    ctx.strokeStyle = hexA(toneLand('#4a3524', '#2a1f14'), 0.50);
+    ctx.lineWidth = Math.max(1.5, centre.s * 0.55);
     ctx.beginPath();
     for (let i = 0; i <= SEG; i += 1) {
       const tt = i / SEG;
@@ -1859,6 +1943,18 @@ function drawPalm(ctx, v, x, y, z, s) {
   // more weight and droop lower (problem 7: arcs ending at +0.24h
   // over a 0.20h-deep dome read as a parasol; fronds that fall to
   // +0.34h read as a palm).
+  // V12: the two-tone crown is still a parasol seen side-on — one
+  // flat ellipse (0.44h × 0.17h) with seven identical fronds
+  // radiating from its centre point (V12 audit problem 1). The
+  // crown is taller and less flat now, with a dark underside
+  // crescent so the mass has a bottom, and the fronds start across
+  // the crown's top at hashed offsets with hashed lengths, droops
+  // and weights — no two fronds agree, the way no two fronds on a
+  // real palm do.
+  const ph = (i, salt) => {
+    const hh = Math.sin(x * 12.9898 + z * 0.371 + i * 7.77 + salt * 3.1) * 43758.5453;
+    return hh - Math.floor(hh);
+  };
   if (base.s < 30) {
     ctx.save();
     // V11: the crown is two-tone and its alpha floor is lifted.
@@ -1872,21 +1968,29 @@ function drawPalm(ctx, v, x, y, z, s) {
     ctx.globalAlpha = clamp(1.15 - base.s * 0.06, 0.50, 0.85);
     ctx.fillStyle = '#2c5a3c';
     ctx.beginPath();
-    ctx.ellipse(tx, ty + h * 0.05, h * 0.44, h * 0.17, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx, ty + h * 0.02, h * 0.38, h * 0.23, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1e4229';
+    ctx.beginPath();
+    ctx.ellipse(tx, ty + h * 0.13, h * 0.30, h * 0.10, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#6f9a5f';
     ctx.beginPath();
-    ctx.ellipse(tx - h * 0.10, ty - h * 0.01, h * 0.34, h * 0.12, 0, 0, Math.PI * 2);
+    ctx.ellipse(tx - h * 0.09, ty - h * 0.05, h * 0.30, h * 0.15, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
   ctx.strokeStyle = '#2f6b46';
-  ctx.lineWidth = Math.max(1.1, base.s * 0.11);
+  ctx.lineWidth = Math.max(1.3, base.s * 0.13);
   for (let i = 0; i < 7; i += 1) {
     const a = Math.PI * (0.05 + i * 0.155);
+    const ox = tx + (ph(i, 41) - 0.5) * h * 0.30;
+    const oy = ty - h * 0.02 + ph(i, 42) * h * 0.04;
+    const len = h * (0.55 + ph(i, 43) * 0.30);
+    const droop = h * (0.22 + ph(i, 44) * 0.20);
     ctx.beginPath();
-    ctx.moveTo(tx, ty);
-    ctx.quadraticCurveTo(tx + Math.cos(a) * h * 0.5, ty - Math.sin(a) * h * 0.30, tx + Math.cos(a) * h * 0.72, ty + h * 0.34);
+    ctx.moveTo(ox, oy);
+    ctx.quadraticCurveTo(ox + Math.cos(a) * len * 0.5, oy - Math.sin(a) * len * 0.30, ox + Math.cos(a) * len, oy + droop);
     ctx.stroke();
   }
 }

@@ -7,6 +7,7 @@
 import { createWorld } from './archipelago.js';
 import { createPlane } from './flight-physics.js';
 import { createMissions } from './missions.js';
+import { makeView, project } from './render.js';
 
 export const SHOT_NAMES = ['cover', 'approach', 'delivery', 'title', 'storm'];
 
@@ -119,6 +120,26 @@ export function stageShot(name, seed) {
     game.light = 71;
     game.banner = { text: `MAIL DELIVERED TO ${isl.name} +170 · REFUELLED`, until: 1e9 };
     game.stats.deliveries = 2;
+    // One seeded far ring hangs just off this shot's left edge — a
+    // cyan arc sliced by the border, a clipped circle rather than a
+    // target (V12 audit problem 10: the ring at (−157, 45, 1730)
+    // projects to screen x −5). Re-hang it inboard, the same staging
+    // the cover and approach use: shift it east until its centre
+    // projects inside the frame with its whole rim showing. Only a
+    // ring whose rim already crosses the border is re-hung — a ring
+    // fully off-frame stays off-frame, so no target is invented
+    // where the shot had none.
+    {
+      const v = makeView(plane, null);
+      for (const r of world.rings) {
+        if (r.passed || r.z <= plane.z) continue;
+        const p = project(v, r.x, r.y, r.z);
+        if (!p) continue;
+        const rx = r.r * p.s;
+        if (p.x < 100 && p.x > -rx) r.x += (100 - p.x) / p.s;
+        else if (p.x > 1180 && p.x < 1280 + rx) r.x -= (p.x - 1180) / p.s;
+      }
+    }
   } else if (name === 'title') {
     // Floating at the home harbour before the run, the course and its lighthouse ahead.
     const home = world.islands[0];
