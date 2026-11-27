@@ -274,7 +274,21 @@ export function stageShot(name, seed) {
     // CAHAYA pill) moves together, so no screen-space collision.
     // Probe-proven: the disc reads in open sky and the lighthouse
     // reads as a red-white tower at the right edge.
-    plane.hdg = 0.19;
+    // V51 COVER-TURN-2 : measured on V50's cover, the disc is
+    // still only HALF free — the y=285 scan shows the cell's edge at
+    // ~x435 while the disc (centre (429,285), r47) spans x382-476, so
+    // its left half stays behind the cell and it reads as glow, not a
+    // disc. One more turn of ~0.04 rad (~2.3 deg, HDG ~013 deg) swings
+    // the cell ~55 px further left, past the disc's left edge. The
+    // lighthouse (tower x1205-1240, 40 px clear of the right edge)
+    // moves LEFT with the world, further into frame — V50's "one more
+    // turn would clip it" is geometrically backwards; the probe
+    // decides. The island's west curve exits further left (already
+    // exiting in V50); the ring/ladder/FINAL/CAHAYA move together.
+    // Guards: the WHOLE disc reads as a disc at full size AND judge
+    // size; the lighthouse stays fully in frame; the composition
+    // survives.
+    plane.hdg = 0.23;
     plane.speed = 34;
     plane.throttle = 0.72;
     plane.vy = -0.6;
