@@ -340,7 +340,7 @@ function drawSea(ctx, v, plane, light) {
   // the gate at high cameras (the cover camera keeps ~21 in its
   // py 354–365 strip instead of ~8).
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 500; i += 1) {
+  for (let i = 0; i < 600; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 9.4) * 43758.5453;
       return h - Math.floor(h);
@@ -382,6 +382,11 @@ function drawSea(ctx, v, plane, light) {
     // and sd 6.80 → 7.16 — denser, but the step guard (≥7.3) is
     // still short by 0.14. Count 420 → 500. The cover band holds
     // 742 px with no dotted line at 2×, so there is headroom.
+    // V31: the band is still dots at 2× (768 px, sd 7.54 vs the ≥8
+    // guard — V31 audit problem 1). The two previous steps each
+    // gained +0.74 sd, so count 500 → 600 with the cap held at 0.55
+    // is the honest fourth step at the full guard. If the cover band
+    // shows a dotted line, revert the count and keep V30 (V29 rule).
     const len = clamp(p.s * 0.35, 6, 12) * (0.6 + hash(9) * 1.6);
     const ht = 2 + Math.floor(hash(10) * 2);
     ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.55) * (0.7 + hash(11) * 0.6);
@@ -856,19 +861,28 @@ function drawSea(ctx, v, plane, light) {
   // storm (30/30 at map too — same geometry, but the debrief panel
   // covers py 600–640 there, as it does for the L-gap/L-deep
   // dashes). HUD rejects as usual.
+  // V31: the column's UPPER slice (x0–160, y558–600) is still thin
+  // (sd 6.98, 212 px — V31 audit problem 3): the pass starts at py
+  // horizon+252 and its gate stops at fwd 45, while py 558 maps to
+  // fwd 47.7. Widen — py horizon+252…+292 → horizon+210…+292
+  // (y558–640), gate fwd 30–45 → 30–48, count 30 → 45 (the taller
+  // window dilutes the bottom slice; the count lift compensates).
+  // Hash-proven before rendering (sea-probe31.mjs): 45/45 kept at
+  // cover AND rescue (12 in the upper slice), 0/45 at approach,
+  // delivery and storm.
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 30; i += 1) {
+  for (let i = 0; i < 45; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 93.9) * 43758.5453;
       return h - Math.floor(h);
     };
     const px = 4 + hash(1) * 316;
-    const py = v.horizon + 252 + hash(2) * 40;
+    const py = v.horizon + 210 + hash(2) * 82;
     if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
     if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
-    if (fwd < 30 || fwd > 45) continue;
+    if (fwd < 30 || fwd > 48) continue;
     const right = (px - VIEW_W / 2) / s;
     const wx = v.camX + fwd * v.sinH + right * v.cosH;
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
@@ -890,8 +904,17 @@ function drawSea(ctx, v, plane, light) {
   // design), 0/30 at cover, approach, delivery, rescue and map.
   // Same window shape as the other targeted passes, same dash
   // variety; the panel and gauge rejects apply as usual.
+  // V31: the strip is fixed (sd 9.77, 439 px) but the sea just
+  // ABOVE it (250,600,330,640) is still flat (sd 4.73, 60 px — V31
+  // audit problem 2): the pass starts at py horizon+292 (= 638)
+  // and its gate stops at fwd 420, while py 600 maps to fwd 479.8.
+  // Widen — py horizon+292…+392 → horizon+254…+392 (py 600–738),
+  // gate fwd 300–420 → 300–480, count 45 → 60 (the wider window
+  // dilutes the strip itself; the count lift compensates).
+  // Hash-proven before rendering (sea-probe31.mjs): 48/60 kept at
+  // storm (15 in the above-strip box), 0/60 at every other camera.
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 45; i += 1) {
+  for (let i = 0; i < 60; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 94.1) * 43758.5453;
       return h - Math.floor(h);
@@ -902,12 +925,12 @@ function drawSea(ctx, v, plane, light) {
     // Count 30 → 45 and the alpha cap 0.30 → 0.40 (the pass runs at
     // its cap already: 0.6 − fwd/2600 ≈ 0.47 at fwd 350).
     const px = 240 + hash(1) * 100;
-    const py = v.horizon + 292 + hash(2) * 100;
+    const py = v.horizon + 254 + hash(2) * 138;
     if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
     if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
-    if (fwd < 300 || fwd > 420) continue;
+    if (fwd < 300 || fwd > 480) continue;
     const right = (px - VIEW_W / 2) / s;
     const wx = v.camX + fwd * v.sinH + right * v.cosH;
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
@@ -3783,6 +3806,25 @@ function drawBoat(ctx, v, b, t) {
     // at most once each): arm-box bright count 502 → ≥550 px AND the
     // 2× crop shows a fading dashed trail. If the revision reads as
     // a scratch, revert the whole wake change to V29.
+    // V31: the wake is still invisible at judge size and only two
+    // diagonal spikes clear the sea (V31 audit problem 4; the V30
+    // 522 was a different, unrecorded box — this version's arm-box
+    // is (1000,440,1130,545) and V30 reads 1,024 px on it). Lift the
+    // base strokes once more, 0.22 → 0.26 (wide) and 0.55 → 0.65
+    // (narrow), keeping the fades and the gaps. Guard: arm-box
+    // 1,024 → ≥1,120 px AND the 2× crop shows a fading dashed trail,
+    // not a scratch, AND the wake is at least faintly visible at
+    // judge size. If the first render reads as a scratch, revert the
+    // whole wake change to V30.
+    // V31 REVISION: the first render's alpha lift is a near-no-op on
+    // the metric (arm-box 1,024 → 1,032 px) — a V30-vs-V31 pixel
+    // diff proves the strokes brightened only +5 levels on ~136 px:
+    // the arm-box is dominated by sea dashes and the narrow stroke
+    // is 1 px, so the lift has almost no footprint. Widen the narrow
+    // stroke (floor 1 → 2 px, p.s*0.08 → p.s*0.11) and lift its alpha
+    // 0.65 → 0.75, keeping the segment gaps so the trail still
+    // breaks instead of scratching. If the revision reads as a
+    // scratch, revert the whole wake change to V30.
     const wakeArm = (x0, y0, x1, y1) => {
       const segs = [[0, 0.26, 1], [0.36, 0.62, 0.75], [0.72, 0.94, 0.5]];
       for (const [t0, t1, fade] of segs) {
@@ -3790,14 +3832,14 @@ function drawBoat(ctx, v, b, t) {
         const sy0 = y0 + (y1 - y0) * t0;
         const sx1 = x0 + (x1 - x0) * t1;
         const sy1 = y0 + (y1 - y0) * t1;
-        ctx.strokeStyle = `rgba(230,248,248,${0.22 * wakeA * fade})`;
+        ctx.strokeStyle = `rgba(230,248,248,${0.26 * wakeA * fade})`;
         ctx.lineWidth = Math.max(2, p.s * 0.22);
         ctx.beginPath();
         ctx.moveTo(sx0, sy0);
         ctx.lineTo(sx1, sy1);
         ctx.stroke();
-        ctx.strokeStyle = `rgba(230,248,248,${0.55 * wakeA * fade})`;
-        ctx.lineWidth = Math.max(1, p.s * 0.08);
+        ctx.strokeStyle = `rgba(230,248,248,${0.75 * wakeA * fade})`;
+        ctx.lineWidth = Math.max(2, p.s * 0.11);
         ctx.beginPath();
         ctx.moveTo(sx0, sy0);
         ctx.lineTo(sx1, sy1);
