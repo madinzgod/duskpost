@@ -2501,6 +2501,59 @@ function drawStorm(ctx, v, storm, t) {
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
+  // V40: a NEIGHBOUR-LIFT pass for the foot's tone step (V40 audit
+  // problem 1). The slab reads mean 50.2, the neighbour box 41.3 —
+  // an 8.9-level step, wider than V38's ~6 (V39's BG2-EAST swap
+  // darkened the box) — and the audit now finds the box is not
+  // uniform: its west half reads 46.4 but its east half (400,380,
+  // 480,470) is a flat dark pocket, mean 36.2, sd 3.78, 125 px.
+  // The dark-only slab lever is spent (V39 SLAB-DARK reverted) and
+  // the slab's sd margin is 0.21, so the gap must close from the
+  // neighbour side. 6 hashed LIT-ONLY steepPuffs spanning the WHOLE
+  // box, fx −0.165…−0.045, fy −0.06…+0.08, fr 0.04–0.06R, lit 0.15,
+  // salts 71–73, the BG recipe at low alpha, radius floor ≥9 px.
+  // Simulation-proven in pixel space BEFORE the edit
+  // (probe40-sim3.py: gap 8.9 → 4.0, neighbour sd 9.07 → 11.33,
+  // foot sd 12.72 → 13.00, 3× crop reads as lumps across the whole
+  // foot; west-only was rejected — it moves the step inside the box,
+  // west 53.7 vs east 36.4 — and east-only was rejected — it
+  // collapses the box sd to 7.79). Hash-proven (probe40c2.mjs):
+  // at storm 6/6 centres in the neighbour box, 0 in the slab, 0 on
+  // any panel, 0 off-frame (the first window, fx from −0.18, put one
+  // centre at (317,431) inside the slab's east edge and was shifted
+  // east before the edit); at cover 6/6 off-frame; rescue cell
+  // off-frame; at approach and delivery the centres sit on the
+  // cells' feet at the 9 px floor, the same as BG/BG2; at map they
+  // land under the debrief panel. Cost, stated in the audit: the
+  // flash field dips ~−0.76 sd by simulation (39.72 → ~38.96 —
+  // below the 39.35 audit guard but above V38's shipped 38.54,
+  // which promoted with the bolt reading crisp) and the slab sd
+  // holds ~14.15; if the real render breaks the slab ≥14 guard or
+  // the flash below 38.54, the revision reverts or narrows this pass.
+  // V40 REVISION (first render: the gap closes 8.9 → 1.0 and the
+  // neighbour sd rises 9.07 → 11.66 with the 3× crop reading as one
+  // weather mass — but the flash field dips 39.72 → 38.43, 0.11 below
+  // the 38.54 floor (V38's shipped value), and the slab sd holds
+  // only 14.11, margin 0.11: the real render lifts harder than the
+  // pixel simulation predicted (+8.1 mean vs +4.9 — the hashed
+  // centres cluster at y 406–432 and overlap, compounding). The
+  // alpha narrows 0.15 → 0.10, which scales the lift ~2/3: expected
+  // gap ~3.7, flash ~38.86, slab ~14.14 — every guard held with
+  // margin, the reading kept. If the revision still breaks a guard,
+  // the pass reverts and V40 ties.)
+  for (let i = 0; i < 6; i += 1) {
+    const fx = -0.165 + (i / 5) * 0.12 + (grain(i, 71) - 0.5) * 0.05;
+    const fy = -0.06 + grain(i, 72) * 0.14;
+    const fr = 0.04 + grain(i, 73) * 0.02;
+    steepPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      Math.max(fr * R, 9),
+      'rgba(122,96,128,0.10)',
+      'rgba(122,96,128,0)',
+    );
+  }
   // V39 REVERTED (revision): the SLAB-DARK pass (8 hashed dark-only
   // steepPuffs, fx −0.36…−0.18, fy −0.02…+0.10, the BG recipe with
   // the lit half removed) is REMOVED after the first render proved
