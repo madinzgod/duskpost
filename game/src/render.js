@@ -17,7 +17,11 @@ export function makeView(plane, shake) {
     camZ: plane.z - cosH * 30,
     sinH,
     cosH,
-    focal: VIEW_W * 0.92,
+    // V46 ZOOM: 0.92 → 1.08 — every world subject (island, ring,
+    // boat, storm cell) a step closer in every flight frame; the
+    // sea's dash passes invert this same projection, so the
+    // texture follows the zoom instead of fighting it.
+    focal: VIEW_W * 1.08,
     horizon: VIEW_H * 0.435 + clamp(-plane.vy * 5, -26, 26) + (shake ? shake.y : 0),
     shakeX: shake ? shake.x : 0,
   };
@@ -70,17 +74,26 @@ export function drawScene(ctx, v, world, plane, fx, game, t) {
   // warms the sunset that is already there.
   const sunX = VIEW_W * 0.335;
   const sunY = v.horizon - 26 - game.lightFrac * 44;
-  const bleed = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 260);
+  // V46: the bleed's reach grows with the disc (260 → 315).
+  const bleed = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 315);
   bleed.addColorStop(0, `rgba(255,176,92,${0.30 * game.lightFrac})`);
   bleed.addColorStop(0.5, `rgba(255,150,80,${0.14 * game.lightFrac})`);
   bleed.addColorStop(1, 'rgba(255,140,70,0)');
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
   ctx.fillStyle = bleed;
-  ctx.fillRect(sunX - 260, sunY - 260, 520, 520);
+  ctx.fillRect(sunX - 315, sunY - 315, 630, 630);
   ctx.restore();
   drawParticles(ctx, v, fx);
-  const scale = plane.onStrip || plane.onWater ? 1.24 : 1.34;
+  // V46 PLANE-BIG: 1.24 → 1.58 on water/strip, 1.34 → 1.70
+  // airborne. For 45 versions the aircraft's screen size was a
+  // constant nobody treated as composition: a ~154 px wingspan,
+  // 12% of the frame, a toy centred in an empty sea in every
+  // frame. She is the subject of the game; she now spans
+  // ~196–211 px. The spray and the wake take the factor
+  // scale/1.24 so they stay glued to the floats (at the old
+  // scales the factor is 1 and their geometry is untouched).
+  const scale = plane.onStrip || plane.onWater ? 1.58 : 1.70;
   // Her shadow on the strip: the one state where she sits on a hard
   // surface in full view, and the delivery frame showed her pasted
   // onto the pavement — drawSeaplane draws no shadow in any state.
@@ -101,8 +114,8 @@ export function drawScene(ctx, v, world, plane, fx, game, t) {
     ctx.restore();
   }
   drawSeaplane(ctx, VIEW_W / 2 + v.shakeX, VIEW_H * 0.665, scale, plane, t);
-  drawSpray(ctx, plane, t);
-  drawWake(ctx, plane, t);
+  drawSpray(ctx, plane, t, scale / 1.24);
+  drawWake(ctx, plane, t, scale / 1.24);
 }
 
 /** V42 BIRDS: a loose flock of gulls working the dusk — five dark
@@ -161,12 +174,17 @@ function drawSky(ctx, v, light, t) {
   // new sun-path (GLITTER-2 in drawSea) answers to this light, and
   // at judge size the V41 glow was a modest halo around a small
   // disc; the dusk's engine should be unmistakable.
-  const glow = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 300);
+  // V46 SUN-BIG: the disc grows r32 → r47 and its glow 300 →
+  // 370 (the rim fade scales with it, 0.5r → 1.6r as before, so
+  // it stays light, not a sticker). At r32 the sun was ~38 px
+  // across at judge size — the dusk's engine under-read for a
+  // game whose whole identity is last light.
+  const glow = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 370);
   glow.addColorStop(0, 'rgba(255,196,110,0.92)');
   glow.addColorStop(0.25, 'rgba(255,150,80,0.40)');
   glow.addColorStop(1, 'rgba(255,140,70,0)');
   ctx.fillStyle = glow;
-  ctx.fillRect(sunX - 310, sunY - 310, 620, 620);
+  ctx.fillRect(sunX - 380, sunY - 380, 760, 760);
   // The disc's own rim fades from its middle out past its edge: a
   // flat solid disc cut one clean circle against the sky — a sticker
   // of a sun — however soft the shoulder outside it was made. The
@@ -174,23 +192,23 @@ function drawSky(ctx, v, light, t) {
   // circle at full size (V10 audit problem 9); the fade now starts
   // at 0.5r and runs to 1.15r, so the disc is light all the way out
   // and its rim is a brightening, not an edge.
-  const disc = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 32);
+  const disc = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 47);
   disc.addColorStop(0, '#ffd9a0');
   disc.addColorStop(0.5, '#ffd9a0');
   disc.addColorStop(1, 'rgba(255,217,160,0)');
   ctx.fillStyle = disc;
   ctx.beginPath();
-  ctx.arc(sunX, sunY, 32, 0, Math.PI * 2);
+  ctx.arc(sunX, sunY, 47, 0, Math.PI * 2);
   ctx.fill();
   // The sun's shoulder: a gradient out to nothing, not a second flat
   // disc — a flat r34 disc at alpha 0.35 over the r27 core left a hard
   // step whose rim read as a ring around the sun.
-  const shoulder = ctx.createRadialGradient(sunX, sunY, 24, sunX, sunY, 52);
+  const shoulder = ctx.createRadialGradient(sunX, sunY, 38, sunX, sunY, 76);
   shoulder.addColorStop(0, 'rgba(255,190,120,0.32)');
   shoulder.addColorStop(1, 'rgba(255,190,120,0)');
   ctx.fillStyle = shoulder;
   ctx.beginPath();
-  ctx.arc(sunX, sunY, 52, 0, Math.PI * 2);
+  ctx.arc(sunX, sunY, 76, 0, Math.PI * 2);
   ctx.fill();
 
   // Distant cloud strata: two soft washes riding the horizon, so the sky has
@@ -5301,23 +5319,23 @@ function drawParticles(ctx, v, fx) {
   ctx.globalAlpha = 1;
 }
 
-function drawSpray(ctx, plane, t) {
+function drawSpray(ctx, plane, t, k) {
   if (plane.spray <= 0.02) return;
   const cx = VIEW_W / 2;
-  const cy = VIEW_H * 0.665 + 52;
+  const cy = VIEW_H * 0.665 + 52 * k;
   ctx.fillStyle = 'rgba(235,250,250,0.75)';
   for (let i = 0; i < 26; i += 1) {
     const ph = (t * 2.6 + i / 26) % 1;
     const side = i % 2 === 0 ? -1 : 1;
-    const x = cx + side * (16 + ph * 120) + Math.sin(i * 7.3) * 7;
-    const y = cy + ph * 26 - Math.sin(ph * Math.PI) * 15;
+    const x = cx + side * (16 + ph * 120) * k + Math.sin(i * 7.3) * 7 * k;
+    const y = cy + (ph * 26 - Math.sin(ph * Math.PI) * 15) * k;
     // V25: the droplets were perfect circles (radius up to 5 px) and
     // read as a trail of soap bubbles at 2× (V25 audit problem 4).
     // Thrown water stretches along its flight: short vertical streak
     // ellipses, smaller, fading faster, so the spray reads as water.
     ctx.globalAlpha = (1 - ph) * (1 - ph) * 0.6 * plane.spray;
     ctx.beginPath();
-    ctx.ellipse(x, y, 1.1 + ph * 1.2, 2.2 + ph * 3.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(x, y, (1.1 + ph * 1.2) * k, (2.2 + ph * 3.6) * k, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
@@ -5334,10 +5352,10 @@ function drawSpray(ctx, plane, t) {
  * not scratches. If the 2× crop reads as scratches, this is reverted
  * and the spray alone carries the water takeoff.
  */
-function drawWake(ctx, plane, t) {
+function drawWake(ctx, plane, t, k) {
   if (!plane.onWater || plane.spray <= 0.3) return;
   const cx = VIEW_W / 2;
-  const top = VIEW_H * 0.665 + 58;
+  const top = VIEW_H * 0.665 + 58 * k;
   const a = plane.spray;
   ctx.save();
   ctx.lineCap = 'round';
@@ -5345,30 +5363,30 @@ function drawWake(ctx, plane, t) {
   // scratches at 2×, and the plane floated ungrounded): the streaks
   // are stronger and wider with a slight curve, and a soft foam pool
   // sits under the floats so the plane reads as ON the water.
-  const pool = ctx.createRadialGradient(cx, top + 2, 4, cx, top + 2, 95);
+  const pool = ctx.createRadialGradient(cx, top + 2 * k, 4, cx, top + 2 * k, 95 * k);
   pool.addColorStop(0, `rgba(235,250,250,${0.22 * a})`);
   pool.addColorStop(1, 'rgba(235,250,250,0)');
   ctx.fillStyle = pool;
   ctx.save();
-  ctx.translate(cx, top + 2);
+  ctx.translate(cx, top + 2 * k);
   ctx.scale(1, 0.22);
   ctx.beginPath();
-  ctx.arc(0, 0, 95, 0, Math.PI * 2);
+  ctx.arc(0, 0, 95 * k, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
   for (const side of [-1, 1]) {
     for (let i = 0; i < 3; i += 1) {
-      const spread = 34 + i * 40;
-      const len = 185 - i * 26;
-      const grad = ctx.createLinearGradient(cx + side * 18, top, cx + side * spread, top + len);
+      const spread = (34 + i * 40) * k;
+      const len = (185 - i * 26) * k;
+      const grad = ctx.createLinearGradient(cx + side * 18 * k, top, cx + side * spread, top + len);
       grad.addColorStop(0, `rgba(235,250,250,${0.48 * a})`);
       grad.addColorStop(1, 'rgba(235,250,250,0)');
       ctx.strokeStyle = grad;
-      ctx.lineWidth = 8 - i * 2;
+      ctx.lineWidth = (8 - i * 2) * k;
       ctx.beginPath();
-      ctx.moveTo(cx + side * 18, top + 4);
+      ctx.moveTo(cx + side * 18 * k, top + 4 * k);
       ctx.quadraticCurveTo(
-        cx + side * (18 + spread) * 0.5 + side * 6, top + len * 0.55,
+        cx + side * (18 * k + spread) * 0.5 + side * 6 * k, top + len * 0.55,
         cx + side * spread, top + len,
       );
       ctx.stroke();

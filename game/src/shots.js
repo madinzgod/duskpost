@@ -241,8 +241,16 @@ export function stageShot(name, seed) {
     // size. Probe-proven (work/v44/crops/probe-cover-300.png):
     // sun disc, ring, plane, glitter path and HUD all survive;
     // the HUD distance reads an honest 309 m. Gameplay untouched.
+    // V46 COVER-CLOSE-2 (revision): 65 m closer again (300 → 235),
+    // on top of the V46 zoom — with both, Cahaya's apparent size
+    // grows ~1.5× over V45 and the island fills the horizon.
+    // Probed at −235 and −265 (work/v46/judge/cover-235-vs-265.jpg):
+    // the −265 fallback did NOT bring the lighthouse back into
+    // frame (at this zoom it sits past the right edge either way),
+    // so the bolder staging stands; the HUD distance reads an
+    // honest 246 m. Gameplay untouched.
     plane.x = isl.x - 74;
-    plane.z = isl.z - 300;
+    plane.z = isl.z - 235;
     plane.y = 0;
     plane.hdg = 0.07;
     plane.speed = 30;
