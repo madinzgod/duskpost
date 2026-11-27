@@ -1076,6 +1076,56 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.40) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
+  // V41: a SEA-WEST pass — the storm frame's mid-left sea
+  // (0,560,300,640) is the last thin sea band in the staged storm
+  // frame: the box reads sd 8.48 only because the east edge carries
+  // the bolt's dashes, while the west half reads 6.46, the upper row
+  // 6.83, the lower row 6.04, and the y600 x0 80-cell 2.38 with 26 px
+  // >med+12 (V41 audit problem 1). The band is owned by no pass: the
+  // FUEL-strip widening starts at py horizon+254 (y600) and its gate
+  // stops at fwd 480, while py 560 maps to fwd ~569 at the storm
+  // camera. Same window shape as the FUEL pass, one band higher and
+  // wider (px 0–300, py horizon+214…+294), gate fwd 400–580.
+  // Hash-proven before rendering (probe41.mjs): 45/45 kept at storm
+  // with all 45 projected centres inside the target box, 0/45 at
+  // cover, approach, delivery, rescue and map, 0 on any panel.
+  // Simulation-proven before rendering (probe41-sim.py): west half
+  // 6.46 → 12.86, y600 x0 cell 2.38 → 8.92, all guards exactly
+  // unchanged (flash 38.73, slab 14.13, neighbour 10.42).
+  // V41 REVISION: the first render lifts less than the pixel sim
+  // (target sd 10.38 vs 13.50, y600 x0 5.5 vs 8.92) — a later
+  // translucent layer mutes the dashes ~0.58x in mean |delta|,
+  // diagnosed by diag41.py (45/45 dashes land on their probe
+  // centres, all guards exactly unchanged). The calibrated sim
+  // (probe41-sim2.py, alpha x0.575) reproduces the real render
+  // almost exactly (target 10.41 vs 10.38, y600 x0 5.55 vs 5.5)
+  // and proves the count lift: 75 dashes at the same alpha cap
+  // gives y600 x0 8.57, y600 x80 9.47, target 11.48 — the alpha
+  // cap stays 0.40, the proven FUEL brightness, so the reading
+  // stays dense glitter, no wash. Count 45 → 75.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 75; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 95.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = hash(1) * 300;
+    const py = v.horizon + 214 + hash(2) * 80;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 400 || fwd > 580) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.40) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
   // V28: a deep-2 pass — the cover's AND the rescue's bottom-right
   // corner sea is DEAD FLAT (x960–1280, y660–700: sd 1.03, 0 px
   // >med+12 of 12,800; y700–740: sd 1.33, again 0 px — V28 audit
