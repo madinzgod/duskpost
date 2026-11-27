@@ -2476,11 +2476,22 @@ function drawStorm(ctx, v, storm, t) {
   // puff at fx −0.06 with fr 0.07R still spills to fx +0.01, so the
   // box's eastern edge keeps coverage. Re-proven
   // (probe38-bg2.mjs, narrowed window).
+  // V39: BG2-EAST swap (audit problem 2 — the flash field dips a
+  // second version in a row, sd 39.64 → 38.54, past the −2.5%
+  // guard). BG2's lit puffs brighten the flash field's dark
+  // surround (field mean 65.9 → 68.7 while the bolt stays put, so
+  // contrast falls); the eastern half of BG2 (fx > −0.12) sits
+  // nearest the bolt channel (fx ≈ −0.008…+0.027). The 12 centres
+  // are UNCHANGED — only the lit rule flips: puffs with fx > −0.12
+  // become dark regardless of parity (probe39.mjs: lit 6 → 4, the
+  // same 8/12 centres in the neighbour box, 0 on any panel).
+  // Dark puffs keep variance in the neighbour box while removing
+  // the brightening nearest the bolt.
   for (let i = 0; i < 12; i += 1) {
     const fx = -0.18 + (i / 11) * 0.12 + (grain(i, 51) - 0.5) * 0.05;
     const fy = -0.02 + grain(i, 52) * 0.12;
     const fr = 0.04 + grain(i, 53) * 0.03;
-    const lit = i % 2 === 0;
+    const lit = i % 2 === 0 && fx <= -0.12;
     steepPuff(
       ctx,
       cx + fx * R,
@@ -2490,6 +2501,21 @@ function drawStorm(ctx, v, storm, t) {
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
+  // V39 REVERTED (revision): the SLAB-DARK pass (8 hashed dark-only
+  // steepPuffs, fx −0.36…−0.18, fy −0.02…+0.10, the BG recipe with
+  // the lit half removed) is REMOVED after the first render proved
+  // it WORSE, not unproven: the slab goes mean 50.2 → 41.7 (−8.5)
+  // with sd 14.21 → 7.52 and >med+12 px 4,954 → 1,739, and the
+  // neighbour box falls with it (sd 9.58 → 6.78, below its ≥8
+  // guard — the dark puffs spill across the x=320 boundary and the
+  // flipped BG2-east puffs remove bright marks). The 3× foot crop
+  // reads as a mostly uniform dark mass with faint lumps: the
+  // tone step is closed only by flattening both halves, undoing
+  // V37/V38's lumpiness. The slab's variance lives in its bright
+  // lumps, so any darkening strong enough to close the ~6 gap
+  // costs more sd than the ≥14 guard allows (the first render's
+  // trade is ~2:1 against) — narrowing cannot save it. The tone
+  // step stands, and the problem is carried to V40.
   // V38 REVERTED (revision): the FG flank-grain pass (16 hashed
   // steepPuffs, fx 0.58…0.74, fy 0.19…0.31, the BG recipe) is
   // REMOVED after the first render proved it WORSE, not unproven:
