@@ -3975,6 +3975,40 @@ function drawIsland(ctx, v, isl, t, light, world) {
         ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.75, srot, 0, Math.PI * 2);
         ctx.fill();
       }
+      // V48 GRASS-STRAW: the cover's grass band is textured now (V47)
+      // but still one flat green field in colour (79.2% green at judge
+      // size) — dry grass at last light reads warm. A straw-toned
+      // stubble companion in the same band, the same fixed-point
+      // height inversion and island clip as V47's pass, count 150,
+      // salts 141-146, radius floor 3.5, cap 5.0, dry-grass tones.
+      // The strip, huts and palms draw after this, on top. The
+      // approach grass 2x crop is the guard: if it turns scratchy,
+      // this reverts.
+      for (let i = 0; i < 150; i += 1) {
+        const sx = 100 + sh(i, 141) * 1180;
+        const sy = 400 + sh(i, 142) * 100;
+        let swx = 0, swz = 0, shgt = 0;
+        for (let it = 0; it < 3; it += 1) {
+          const ss = (sy - v.horizon) / (v.camY - shgt);
+          if (ss <= 0) break;
+          const sfwd = v.focal / ss;
+          const sright = (sx - VIEW_W / 2) / ss;
+          swx = v.camX + sfwd * v.sinH + sright * v.cosH;
+          swz = v.camZ + sfwd * v.cosH - sright * v.sinH;
+          shgt = world.heightAt(swx, swz);
+        }
+        const sp = project(v, swx, shgt, swz);
+        if (!sp || sp.x < 100 || sp.x > 1280 || sp.y < 400 || sp.y > 500) continue;
+        const sr = clamp(sp.s * 0.75, 3.5, 5.0) * (0.7 + sh(i, 144) * 0.6);
+        const srot = (sh(i, 145) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 146) * 1.5;
+        ctx.fillStyle = sh(i, 143) > 0.62
+          ? hexA(tone('#c2a15e', '#6b5326'), speckA * 1.17)
+          : hexA(toneLand('#8a6f3a', '#4a3a1c'), speckA * 1.3);
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.75, srot, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
   }
@@ -5286,8 +5320,8 @@ function drawBoat(ctx, v, b, t) {
         ctx,
         p.x + jx * w * 0.22 + ph * w * 0.8,
         p.y - h * 2.9 - ph * h * 3.8,
-        (7 + ph * 19) * p.s * 0.4,
-        `rgba(${cr},${cg},${cb},${0.68 * (1 - ph * 0.12)})`,
+        (7 + ph * 11) * p.s * 0.4, // V48 PLUME-DENSE-2: narrower column, denser ink
+        `rgba(${cr},${cg},${cb},${0.82 * (1 - ph * 0.12)})`,
         `rgba(${cr},${cg},${cb},0)`,
         0.8,
       );

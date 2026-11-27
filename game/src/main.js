@@ -281,12 +281,20 @@ function drawBeacon(ctx, view, t) {
       // on approach it stacked unreadably over the island against the
       // guidance ladder's own FINAL line naming the same island.
       const tw = ctx.measureText(label).width;
+      // V48 LABEL-CLEAR: the rescue plume drifts right of the flare,
+      // so the label centred on the flare covers the column's core
+      // (x1000-1049 at the pill's height). Rescue-only: shift the
+      // pill left 90 px, so its right edge (~978) clears the column
+      // while the pillar (x950-980) still passes behind the pill's
+      // right edge — the label stays attached to its beacon. Other
+      // missions' labels are untouched.
+      const labelX = m.kind === 'rescue' ? base.x - 90 : base.x;
       ctx.fillStyle = 'rgba(10,14,22,0.38)';
       ctx.beginPath();
-      ctx.roundRect(base.x - tw / 2 - 8, base.y - pillarH - 10 - fontPx - 5, tw + 16, fontPx + 9, 6);
+      ctx.roundRect(labelX - tw / 2 - 8, base.y - pillarH - 10 - fontPx - 5, tw + 16, fontPx + 9, 6);
       ctx.fill();
       ctx.fillStyle = '#ffe9c9';
-      ctx.fillText(label, base.x, base.y - pillarH - 10);
+      ctx.fillText(label, labelX, base.y - pillarH - 10);
     }
   }
 }
