@@ -227,13 +227,19 @@ export function stageShot(name, seed) {
     game.light = 60;
     game.stats = { rings: 5, deliveries: 3, rescues: 1, crashes: 0 };
   } else {
-    // cover: WATER TAKEOFF south of Cahaya — on the step, spray flying,
-    // the next ring low over the water ahead-right, Cahaya's strip and
-    // lighthouse ahead, its mail aboard. The seaplane's defining verb
-    // in the large slot: no other cover in the field shows water ops.
-    // Staged on the water south of the island (the same water the old
-    // cruise cover flew over), so the sky keeps the hero clouds and
-    // the squall bank — only the plane's state and the ring change.
+    // cover: ON FINAL for Cahaya — airborne, low over the shore,
+    // the guidance ladder lit, the next ring ahead at flight
+    // height, its mail aboard. (Through V46's first build this
+    // was a water takeoff on the step; the main session's steer
+    // — verified against the frame — was that the dossier's
+    // large cell must show FLIGHT at first glance, not ALT 0 /
+    // ON THE WATER. The water work has not left the set: the
+    // rescue frame still floats on the water by the boat. Two
+    // airborne stagings were probed — work/v46/judge/
+    // cover-trio.jpg: high and close (island floods the frame
+    // as a green slab, dusk lost) vs low at the COVER-CLOSE-2
+    // distance (seascape kept, ladder armed, AIRBORNE on the
+    // panel); the low one stands.)
     const isl = world.islands[3]; // CAHAYA
     // V44 COVER-CLOSE: staged 130 m closer (was isl.z - 430) so
     // Cahaya reads as a destination landmass — beach, palms, house,
@@ -249,26 +255,31 @@ export function stageShot(name, seed) {
     // frame (at this zoom it sits past the right edge either way),
     // so the bolder staging stands; the HUD distance reads an
     // honest 246 m. Gameplay untouched.
+    // V46 COVER-AIR (steering revision): the same distance, now
+    // flown — 8 m up (the panel reads ALT 26 FT / AIRBORNE /
+    // V/S −118 FPM), on a gentle descent to the strip, the
+    // guidance ladder armed. Probe-proven before the edit
+    // (work/v46/probe-raw/cover-airB.png).
     plane.x = isl.x - 74;
     plane.z = isl.z - 235;
-    plane.y = 0;
+    plane.y = 8;
     plane.hdg = 0.07;
-    plane.speed = 30;
-    plane.throttle = 1.0;
-    plane.vy = 0;
+    plane.speed = 34;
+    plane.throttle = 0.72;
+    plane.vy = -0.6;
     plane.bank = -0.12;
-    plane.airborne = false;
-    plane.onWater = true;
-    plane.spray = 1; // on the step: the floats are throwing water
+    plane.airborne = true;
+    plane.onWater = false;
+    plane.spray = 0; // airborne: no spray — the sea is below her
     plane.fuel = 78;
     plane.cargoKg = 240; // Cahaya's mail is in the back
     // Rings south of here are already threaded on this run; the next
-    // one hangs low over the water ahead-right, big in the frame — a
-    // gate to climb through off the water, not a halo dead centre.
+    // one hangs at flight height over the shore ahead-right, big in
+    // the frame — a gate on the final, not a halo dead centre.
     for (const r of world.rings) if (r.z < plane.z) r.passed = true;
     const ring = world.rings.find((r) => !r.passed && r.z > plane.z) || world.rings[3];
     ring.x = plane.x + 30;
-    ring.y = 18;
+    ring.y = 14;
     ring.z = plane.z + 130;
     // V22: two far rings overlap into a bubble Venn mid-frame
     // (audit problem 5). Separate any pair whose projected rims

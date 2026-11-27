@@ -5109,7 +5109,13 @@ function drawBoat(ctx, v, b, t) {
     // wide (V25 audit problem 9). Smaller radius (w×0.42) with a mid
     // stop for a steep falloff, and a bigger star, so the source
     // dominates and the warmth hugs it.
-    const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, w * 0.42);
+    // V46 FLARE-BURST: the label promises a flare and the frame
+    // must keep the promise — the glow widens (w×0.42 → w×0.55,
+    // its containing square grows with it, per the V23 rule
+    // below) and the star below gains a white-hot core and a
+    // four-point sparkle, so the source reads as a burning
+    // flare at full size and at judge size, not a dot.
+    const glow = ctx.createRadialGradient(p.x, p.y - h * 2.6, 1, p.x, p.y - h * 2.6, w * 0.55);
     glow.addColorStop(0, `rgba(255,120,40,${0.85 * flicker})`);
     glow.addColorStop(0.45, `rgba(255,120,40,${0.35 * flicker})`);
     glow.addColorStop(1, 'rgba(255,120,40,0)');
@@ -5122,11 +5128,24 @@ function drawBoat(ctx, v, b, t) {
     // it (V24: the radius shrank to w×0.55, so the square shrinks
     // with it — a 2w square would still contain it, but the rect is
     // the glow's own bounds now). (V25: radius w×0.42, same rule.)
-    ctx.fillRect(p.x - w * 0.42, p.y - h * 2.6 - w * 0.42, w * 0.84, w * 0.84);
+    ctx.fillRect(p.x - w * 0.55, p.y - h * 2.6 - w * 0.55, w * 1.1, w * 1.1);
     ctx.fillStyle = '#ffb35c';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - h * 2.6, Math.max(3.2, p.s * 1.4), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffe9c9';
     ctx.beginPath();
     ctx.arc(p.x, p.y - h * 2.6, Math.max(1.6, p.s * 0.7), 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = `rgba(255,190,110,${0.75 * flicker})`;
+    ctx.lineWidth = Math.max(1.4, p.s * 0.16);
+    ctx.lineCap = 'round';
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.beginPath();
+      ctx.moveTo(p.x + dx * p.s * 1.1, p.y - h * 2.6 + dy * p.s * 1.1);
+      ctx.lineTo(p.x + dx * p.s * 3.4, p.y - h * 2.6 + dy * p.s * 3.4);
+      ctx.stroke();
+    }
     // Smoke: a wisp, not coins — the flat-core softPuffs read as
     // stacked dark discs above the flare (V22 audit problem 4; V21's
     // own revision crop shows the same two discs its fix was meant to
@@ -5200,19 +5219,27 @@ function drawBoat(ctx, v, b, t) {
     // not smoke — too wide, too pale, drifting too far. A tighter
     // column: less growth, a darker head, less drift, so the column
     // keeps its shape all the way up.
-    for (let i = 0; i < 8; i += 1) {
-      const ph = (t * 0.16 + i / 8) % 1;
+    // V46 PLUME-DENSE: ten puffs instead of eight, a darker
+    // base (104,62,48) so the column's foot silhouettes on the
+    // bright horizon, a taller rise (h×3.8) so the head reaches
+    // the dark sky, and alpha 0.68 — the column the V43 ramp
+    // described, at a density the eye can hold. (The head is
+    // still a soft lens at full size; twenty versions of this
+    // element say the softness is structural. The flare burst
+    // above is what makes the frame's promise unmissable now.)
+    for (let i = 0; i < 10; i += 1) {
+      const ph = (t * 0.16 + i / 10) % 1;
       const hh = Math.sin(i * 12.9898 + 3.7) * 43758.5453;
       const jx = (hh - Math.floor(hh)) - 0.5;
-      const cr = Math.round(120 + ph * 52);
-      const cg = Math.round(80 + ph * 48);
-      const cb = Math.round(62 + ph * 50);
+      const cr = Math.round(104 + ph * 74);
+      const cg = Math.round(62 + ph * 78);
+      const cb = Math.round(48 + ph * 70);
       softPuff(
         ctx,
         p.x + jx * w * 0.22 + ph * w * 0.8,
-        p.y - h * 2.9 - ph * h * 3.0,
-        (6 + ph * 14) * p.s * 0.4,
-        `rgba(${cr},${cg},${cb},${0.58 * (1 - ph * 0.12)})`,
+        p.y - h * 2.9 - ph * h * 3.8,
+        (7 + ph * 19) * p.s * 0.4,
+        `rgba(${cr},${cg},${cb},${0.68 * (1 - ph * 0.12)})`,
         `rgba(${cr},${cg},${cb},0)`,
         0.8,
       );

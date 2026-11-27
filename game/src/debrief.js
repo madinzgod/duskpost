@@ -305,17 +305,9 @@ export function drawRouteMap(ctx, world, game, plane, t) {
     ctx.fillText('RESCUE BOAT', lx, ly);
   }
 
-  // Compass + scale bar.
-  ctx.fillStyle = '#ffe9c9';
-  ctx.font = '700 20px system-ui, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('N', 1150, 182);
-  ctx.beginPath();
-  ctx.moveTo(1150, 188);
-  ctx.lineTo(1144, 204);
-  ctx.lineTo(1156, 204);
-  ctx.closePath();
-  ctx.fill();
+  // Scale bar. (V46: the chart carried TWO north marks — this
+  // corner N and the compass rose's own N in the band above.
+  // The rose is the chart's north; the corner mark is gone.)
   ctx.strokeStyle = '#ffe9c9';
   ctx.lineWidth = 3;
   ctx.beginPath();
