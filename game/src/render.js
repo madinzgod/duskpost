@@ -584,6 +584,68 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
+  // V33: two cell passes for the cover's last thin cells — the
+  // y430–470 x160 cell (sd 7.44) and x640 cell (7.58), and the
+  // y470–510 x0 cell (7.32) and x160 cell (7.15) (V33 audit
+  // problems 1, 2). Mechanism: the mirror pass's u^2 px bias
+  // starves x160–320 while the far-left it was biased for reads
+  // 9.57, and the centre pass's 48 uniform dashes leave its right
+  // edge thin (V32's revision note); and NO targeted pass reaches
+  // below horizon+122, so the y470 band is owned only by the
+  // near-water pass, spread over the whole frame. C1 samples only
+  // the two thin y430 strips (px 160–320 / 640–800, 50/50 by
+  // hash), same window and gate as the targeted passes; C2 samples
+  // only the left strip (px 0–320) over the lower window
+  // (horizon+122…+160), gate fwd 55–700 — at the storm camera
+  // that window maps to fwd 762–999, so the 700 cap rejects it
+  // with margin (a 750 cap would leave only 12 units). Same dash
+  // shape and alpha as the other targeted passes. Hash-proven:
+  // C1 30/30 kept at cover, approach, delivery and rescue, 11 in
+  // the x160 cell and 14 in the x640 cell at cover, 0/30 at storm;
+  // C2 24/24 kept at cover, approach, delivery and rescue, 11 in
+  // the x0 cell and 13 in the x160 cell at cover, 0/24 at storm.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 30; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 81.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = hash(1) < 0.5 ? 160 + hash(3) * 160 : 640 + hash(3) * 160;
+    const py = v.horizon + 70 + hash(2) * 52;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 750) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 24; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 81.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 0 + hash(1) * 320;
+    const py = v.horizon + 122 + hash(2) * 38;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 55 || fwd > 700) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
   // V24: a targeted delivery near-sea pass — the delivery frame's
   // sea left of the strip (mid-left 270 px >12, far-left 321,
   // V24 audit problem 8) sits at fwd 224–400 at the delivery camera
