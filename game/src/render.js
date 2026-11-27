@@ -646,6 +646,37 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
+  // V37: a W1 pass for the cover's y470 x800 watch cell (sd 8.03,
+  // ~10 dashes — V37 audit problem 2, the V36 watch item
+  // promoted). Mechanism: no targeted pass reaches below
+  // horizon+122 except C2, which samples px 0–320 only, so the
+  // x800 cell is owned only by the near-water pass, spread over
+  // the whole frame. Same window, gate and dash shape as C2, px
+  // 800–960 only, count 14, salt base 82.1. Hash-proven
+  // (probe37-bg.mjs): 14/14 kept at cover, approach, delivery,
+  // rescue and map, 14 in the cell at cover, 0/14 at storm, 0 on
+  // any panel.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 14; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 82.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 800 + hash(1) * 160;
+    const py = v.horizon + 122 + hash(2) * 38;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 55 || fwd > 700) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
   // V24: a targeted delivery near-sea pass — the delivery frame's
   // sea left of the strip (mid-left 270 px >12, far-left 321,
   // V24 audit problem 8) sits at fwd 224–400 at the delivery camera
@@ -2380,6 +2411,44 @@ function drawStorm(ctx, v, storm, t) {
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
+  // V37: a base grain for the cell foot — the top-left slab
+  // (160,380,320,470: sd 3.15, 0 px >med+12 — V37 audit problem
+  // 1) sits at fx −0.36…−0.18, fy −0.09…+0.05: its top half is the
+  // bottom of the lowest belly puff and its bottom half is the TOP
+  // of the rain curtain, whose alpha varies only with height, while
+  // the short streaks start at t0 ≥ 0.06 and never reach the slab's
+  // top. No grain pass reaches the band — the mottle sits at fy
+  // 0.25–0.65, the shoulder grain at fy 0.74–1.0. 24 hashed
+  // steepPuffs at the foot, fx −0.45…+0.10, fy −0.02…+0.10, fr
+  // 0.04–0.07R, lit 1-in-2 at 0.38 / dark 0.40, salts 41–43, the
+  // V15-rev mottle recipe with the V17 ≥9 px floor — NOT the V29
+  // eastern grain (fr up to 0.26R at 0.50 washed the flank flat).
+  // Hash-proven (probe37-bg.mjs): at storm 4/24 centres in the
+  // slab, 4 in the neighbour box, 12 lit / 12 dark, 0 on any panel,
+  // 0 off-frame; at cover 24/24 off-frame; rescue cell off-frame.
+  // V37 REVISION (first render: the slab goes sd 3.15 → 9.80
+  // with 2,145 px, mean +5.9 — the guard is met and the 3× crop
+  // reads as cloud — but the flash field dips sd 40.36 → 38.55,
+  // mean +5.8: the grain's eastern end overlaps the bolt's glow.
+  // The fx range narrows −0.45…+0.10 → −0.45…−0.10: re-proven
+  // (probe37-bg-rev.mjs), 8/24 centres in the slab now, 2 in the
+  // neighbour box, still 0 on any panel and 24/24 off-frame at
+  // cover — the grain concentrates where the slab is and leaves
+  // the bolt alone).
+  for (let i = 0; i < 24; i += 1) {
+    const fx = -0.45 + (i / 23) * 0.35 + (grain(i, 41) - 0.5) * 0.05;
+    const fy = -0.02 + grain(i, 42) * 0.12;
+    const fr = 0.04 + grain(i, 43) * 0.03;
+    const lit = i % 2 === 0;
+    steepPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      Math.max(fr * R, 9),
+      lit ? 'rgba(122,96,128,0.38)' : 'rgba(30,26,48,0.40)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
+  }
   // V16 rev: the dash pass is REMOVED — the first render's
   // dashes read as scratches, a separate layer of thin dark
   // marks over the cloud, and the pale discs are still readable
@@ -3394,6 +3463,20 @@ function drawIsland(ctx, v, isl, t, light, world) {
       // map, cover and storm. The strip and the DUSKPOST pill draw
       // after this, on top, so no speck ever dots the runway or the
       // pill.
+      // V37 TONE, REVERTED in the revision (the V36 partial
+      // continued: the patch meets its sd guard at 8.69 but only
+      // 34 px >med+12 vs the 150 sub-guard — the count and
+      // size/alpha levers are spent, and the pale tone's dusk end
+      // sits at the +12 threshold by construction, so the lever
+      // tried was the TONE FLOOR: the dusk end lifted '#4a5a3a' →
+      // '#7a8a58' in this pass and in E2-strip2 only. The first
+      // render proved it WRONG: bright px 34 → 661, but the 3×
+      // crop reads as isolated pale leaves on the flat dark field,
+      // not stubble — on a flat background a paler dash reads as
+      // a leaf, and no intermediate tone can fix a contrast
+      // problem whose background has no texture to blend into.
+      // Reverted; the partial stands at 34 vs 150, sd guard met,
+      // reading grass).
       for (let i = 0; i < 60; i += 1) {
         const sx = 1000 + sh(i, 104) * 120;
         const sy = 660 + sh(i, 105) * 50;
