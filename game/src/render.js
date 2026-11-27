@@ -54,6 +54,31 @@ export function drawScene(ctx, v, world, plane, fx, game, t) {
   drawSea(ctx, v, plane, game.lightFrac, sunBlock);
   drawBirds(ctx, v, game.lightFrac, t, sunBlock);
   drawWorldObjects(ctx, v, world, plane, fx, t, game.lightFrac);
+  // V43 SUN-BLEED (revision): the sun's sky glow is drawn before
+  // the world, so a distant storm standing dead ahead eclipses it
+  // — in the cover shot the cell's screen disc sits on the sun
+  // (probe43: storm disc (422,299) r123 vs sun (429,285)) and the
+  // dusk's engine vanishes behind weather; the first V43 render
+  // proved the cloud-light passes cannot reach it (the clouds
+  // there are shaded or too small to draw — the dark mass IS the
+  // cell). A soft warm bleed laid over the world at the sun's
+  // screen position, screen-blended, no edge anywhere: the light
+  // scatters around and through the thin parts of the mass instead
+  // of the sun winking out. Scaled by the light meter, so at last
+  // light it is a faint ember, not a lamp. It sits under the plane
+  // and the HUD, and under the storm frame's clear-air gap it only
+  // warms the sunset that is already there.
+  const sunX = VIEW_W * 0.335;
+  const sunY = v.horizon - 26 - game.lightFrac * 44;
+  const bleed = ctx.createRadialGradient(sunX, sunY, 4, sunX, sunY, 260);
+  bleed.addColorStop(0, `rgba(255,176,92,${0.30 * game.lightFrac})`);
+  bleed.addColorStop(0.5, `rgba(255,150,80,${0.14 * game.lightFrac})`);
+  bleed.addColorStop(1, 'rgba(255,140,70,0)');
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.fillStyle = bleed;
+  ctx.fillRect(sunX - 260, sunY - 260, 520, 520);
+  ctx.restore();
   drawParticles(ctx, v, fx);
   const scale = plane.onStrip || plane.onWater ? 1.24 : 1.34;
   // Her shadow on the strip: the one state where she sits on a hard
@@ -87,19 +112,22 @@ export function drawScene(ctx, v, world, plane, fx, game, t) {
  * inside the storm cell or after dark would be a lie, so both
  * suppress it. The V41 sky was beautiful and empty; this is the
  * life it was missing, visible at judge size as moving marks
- * against the light. */
+ * against the light.
+ * V43 BIRDS-BIG: at judge size the V42 gulls were 2–3 px ticks,
+ * barely there — the wingspan and stroke grow ~1.55× so they
+ * read as gulls, not dust on the print. */
 function drawBirds(ctx, v, light, t, sunBlock) {
   if (sunBlock >= 0.35 || light < 0.28) return;
   ctx.save();
-  ctx.strokeStyle = 'rgba(40,22,36,0.78)';
+  ctx.strokeStyle = 'rgba(40,22,36,0.85)';
   ctx.lineCap = 'round';
-  ctx.lineWidth = 2.4;
+  ctx.lineWidth = 3.2;
   for (let i = 0; i < 5; i += 1) {
     const bh = Math.sin(i * 12.9898 + 4.7) * 43758.5453;
     const bf = bh - Math.floor(bh);
     const bx = ((i * 173 + 890 + t * 7) % 1500) - 110;
     const by = v.horizon - 148 - bf * 92 - i * 9 + Math.sin(t * 0.9 + i * 1.7) * 5;
-    const bw = 11 + bf * 8;
+    const bw = 17 + bf * 12;
     const flap = Math.sin(t * 5.2 + i * 2.3) * 0.45;
     ctx.beginPath();
     ctx.moveTo(bx - bw, by - flap * bw * 0.5);
@@ -1683,7 +1711,7 @@ function drawWorldObjects(ctx, v, world, plane, fx, t, light) {
   }
 
   for (const item of items) {
-    if (item.kind === 'cloud') drawCloud(ctx, v, item.o, stormDisc);
+    if (item.kind === 'cloud') drawCloud(ctx, v, item.o, stormDisc, light);
     else if (item.kind === 'storm') drawStorm(ctx, v, item.o, t);
     else if (item.kind === 'squall') drawSquall(ctx, v, item.o, t);
     else if (item.kind === 'island') drawIsland(ctx, v, item.o, t, light, world);
@@ -3020,7 +3048,7 @@ function drawStorm(ctx, v, storm, t) {
   }
 }
 
-function drawCloud(ctx, v, c, stormDisc = null) {
+function drawCloud(ctx, v, c, stormDisc = null, light = 0.6) {
   const p = project(v, c.x, c.y, c.z);
   if (!p) return;
   const w = c.s * p.s * 0.26;
@@ -3078,8 +3106,33 @@ function drawCloud(ctx, v, c, stormDisc = null) {
   // removed it and darkened the belly (mean 53.3 → 47.0). In the
   // cell's own tone the cloud adds mass to the storm instead of a
   // patch on it.
-  const bellyRgb = shaded ? '33,29,50'
-    : `${Math.round(74 + (138 - 74) * hz)},${Math.round(44 + (85 - 44) * hz)},${Math.round(86 + (112 - 86) * hz)}`;
+  const bellyBase = shaded ? [33, 29, 50]
+    : [Math.round(74 + (138 - 74) * hz), Math.round(44 + (85 - 44) * hz), Math.round(86 + (112 - 86) * hz)];
+  // V43 SUN-CLOUDS: the sun lights the clouds near it. A cloud's
+  // projected centre near the sun's screen position takes a warm
+  // light factor — its belly warms, its core lightens, its lit
+  // tops and underlight lift — so the clouds flanking the sun read
+  // as sunset-lit weather instead of dark smudges on the brightest
+  // sky. Shaded clouds (inside the storm's silhouette) take none:
+  // the cell's shadow has no light to give. The sun hangs at a
+  // fixed 0.335 across the frame; the vertical stretch keeps the
+  // high hero banks (far above the sun) at a low factor while the
+  // low row by the sun takes most of it.
+  const sunX = VIEW_W * 0.335;
+  const sunY = v.horizon - 26 - light * 44;
+  // V43 REVISION: the first render proved the 300 px radius too
+  // tight — the one drawn cloud in the sun's row (621,288, sunD
+  // 192) took only sunK 0.36. Widened to 380 so it takes ~0.5;
+  // the high hero banks (sunD 700+) still take none.
+  const sunD = Math.hypot(p.x - sunX, (p.y - sunY) * 1.4);
+  const sunK = shaded ? 0 : clamp(1 - sunD / 380, 0, 1);
+  const sunWarm = [150, 92, 108];
+  const bellyRgb = bellyBase.map((ch, i) => Math.round(ch + (sunWarm[i] - ch) * 0.5 * sunK)).join(',');
+  // The dark core lightens with the same factor, so the belly's
+  // shadow does not stay a black hole inside a lit cloud.
+  const coreBase = [36, 22, 44];
+  const coreWarm = [70, 45, 60];
+  const coreRgb = coreBase.map((ch, i) => Math.round(ch + (coreWarm[i] - ch) * 0.4 * sunK)).join(',');
   puffs.forEach(([ox, oy, r], i) => {
     const voy = oy > 0.05 ? oy * 0.7 : oy;
     const cxp = p.x + (ox * mir * spreadK + (jit(i, 1) - 0.5) * 0.09) * w;
@@ -3107,7 +3160,7 @@ function drawCloud(ctx, v, c, stormDisc = null) {
         p.x + (jit(i, 61) - 0.5) * w * 0.78,
         p.y + (jit(i, 62) - 0.5) * w * spread * 0.62,
         w * (0.10 + jit(i, 63) * 0.09),
-        lit ? `rgba(156,98,132,${0.13 * (1 - hz * 0.8)})` : `rgba(28,16,40,${0.16 * (1 - hz * 0.8)})`,
+        lit ? `rgba(156,98,132,${0.13 * (1 - hz * 0.8) * (1 + 0.5 * sunK)})` : `rgba(28,16,40,${0.16 * (1 - hz * 0.8)})`,
         lit ? 'rgba(156,98,132,0)' : 'rgba(28,16,40,0)',
         squash,
       );
@@ -3133,8 +3186,8 @@ function drawCloud(ctx, v, c, stormDisc = null) {
       p.x + (jit(i, 51) - 0.5) * w * 0.7,
       p.y + w * spread * (0.02 + jit(i, 52) * 0.08),
       w * 0.20 * (0.85 + jit(i, 53) * 0.3),
-      `rgba(${shaded ? '33,29,50' : '36,22,44'},${(shaded ? 0.12 : 0.42) * (1 - hz * 0.8)})`,
-      `rgba(${shaded ? '33,29,50' : '36,22,44'},0)`,
+      `rgba(${shaded ? '33,29,50' : coreRgb},${(shaded ? 0.12 : 0.42 * (1 - 0.3 * sunK)) * (1 - hz * 0.8)})`,
+      `rgba(${shaded ? '33,29,50' : coreRgb},0)`,
       squash,
     );
   }
@@ -3182,10 +3235,11 @@ function drawCloud(ctx, v, c, stormDisc = null) {
     // alpha 0.38 → 0.46, near colour warmed 146 → 168 red) — with
     // the mottle and the underlight below, the top light is one
     // of three modelling passes, not the cloud's only one.
-    const lr = Math.round(168 + (215 - 168) * warmK);
-    const lg = Math.round(84 + (135 - 84) * warmK);
+    // V43 SUN-CLOUDS: the lit tops warm and lift near the sun.
+    const lr = Math.round(168 + (215 - 168) * warmK + 57 * sunK);
+    const lg = Math.round(84 + (135 - 84) * warmK + 36 * sunK);
     const lb = Math.round(110 + (105 - 110) * warmK);
-    softPuff(ctx, cxp, cyp, rr, `rgba(${lr},${lg},${lb},${0.46 + 0.16 * warmK + jit(i, 5) * 0.16})`, `rgba(${lr},${lg},${lb},0)`, squash);
+    softPuff(ctx, cxp, cyp, rr, `rgba(${lr},${lg},${lb},${0.46 + 0.16 * warmK + 0.18 * sunK + jit(i, 5) * 0.16})`, `rgba(${lr},${lg},${lb},0)`, squash);
   });
   // V42 CLOUD-LIGHT (3/3): the underlight. At dusk the sun sits
   // UNDER the cloud deck, and a real bank burns along its belly.
@@ -3194,6 +3248,8 @@ function drawCloud(ctx, v, c, stormDisc = null) {
   // the bright sky — the difference, at judge size, between a
   // violet smudge and weather. Fades with range haze like the
   // belly itself.
+  // V43 SUN-CLOUDS: the underlight lifts near the sun, so the
+  // belly's lower edge burns where the light actually hits it.
   for (let i = 0; i < 5; i += 1) {
     const fx = -0.38 + i * 0.19 + (jit(i, 71) - 0.5) * 0.08;
     softPuff(
@@ -3201,7 +3257,7 @@ function drawCloud(ctx, v, c, stormDisc = null) {
       p.x + fx * w,
       p.y + w * spread * 0.30 + (jit(i, 72) - 0.5) * w * 0.03,
       w * (0.13 + jit(i, 73) * 0.06),
-      `rgba(255,138,74,${(0.13 + jit(i, 74) * 0.06) * (1 - hz * 0.5)})`,
+      `rgba(255,138,74,${(0.13 + jit(i, 74) * 0.06) * (1 - hz * 0.5) * (1 + 0.9 * sunK)})`,
       'rgba(255,138,74,0)',
       squash,
     );
@@ -3294,8 +3350,11 @@ function drawIsland(ctx, v, isl, t, light, world) {
     ctx.fill();
   }
   // Foam line at the water's edge, then the beach, then the raised land inside it.
-  islandPath(ctx, v, isl, 1.23, 0);
-  ctx.fillStyle = 'rgba(230,246,244,0.28)';
+  // V43 ISLAND-LIGHT: the foam was 1 px at alpha 0.28 — the band's
+  // bottom value never read. A wider, brighter waterline rim so the
+  // island's base carries light even compressed to ~15 px tall.
+  islandPath(ctx, v, isl, 1.26, 0);
+  ctx.fillStyle = 'rgba(230,246,244,0.45)';
   ctx.fill();
   // V23: one flat tan band reads as a ribbon (V23 audit problem 11).
   // Wet sand at the waterline (darker, the sea's own tone) under dry
@@ -3334,11 +3393,17 @@ function drawIsland(ctx, v, isl, t, light, world) {
   ctx.fillStyle = land;
   ctx.fill();
   // A lit ridge so the island reads as ground with height, not a flat blob.
-  islandPath(ctx, v, isl, 0.55, isl.h * 0.9);
-  ctx.fillStyle = toneLand('#7aa86e', '#33503a');
-  ctx.globalAlpha = 0.85;
+  // V43 ISLAND-LIGHT: the ridge was a mid green at 0.85 — the band's
+  // top value never read either. A wider, brighter, warmer sunlit
+  // crest (full alpha) so the island carries a lit top edge against
+  // the sky, with the dark land between crest and beach. Through
+  // toneLand, so last-light frames still darken honestly.
+  // V43 REVISION: the first render's crest still read thin at
+  // cover range — the approach frame proves the wider crest reads
+  // as a sunlit hill, not a stripe, so it widens one more step.
+  islandPath(ctx, v, isl, 0.66, isl.h * 0.9);
+  ctx.fillStyle = toneLand('#9abd7c', '#4a6a44');
   ctx.fill();
-  ctx.globalAlpha = 1;
   // Ground patches: seeded clearings in varied land tones, clipped to the
   // island's own outline and toned with the same haze and darkening as the
   // land itself. Without them the near island is one flat gradient fill
@@ -5103,19 +5168,33 @@ function drawBoat(ctx, v, b, t) {
     // discs were FLAT (squash 0.45) ellipses of one size in a
     // straight stack; these are near-round (0.8), grow ×3.6 and
     // wander sideways, so no two rims align into a stack.
+    // V43 PLUME-STRONG: V42's ramp (warm umber → dark grey) was a
+    // near-perfect camouflage at every height — measured on the
+    // render, the plume's pixels sit within a few levels of the
+    // sky behind it at all heights (head (70,45,73) vs sky
+    // (66,39,81); mid (116,59,73) vs (107,64,83)). The ramp is
+    // reversed: DARK warm umber at the base, a silhouette on the
+    // bright horizon, to LIGHT warm grey at the head, sunlit
+    // smoke on the darkening sky — contrast at both ends. Wider
+    // (×1.35), taller (rise h×3.0, so the head reaches the dark
+    // sky), more drift. The flare star and glow are untouched.
+    // V43 REVISION: the first render's head read as a beige cloud,
+    // not smoke — too wide, too pale, drifting too far. A tighter
+    // column: less growth, a darker head, less drift, so the column
+    // keeps its shape all the way up.
     for (let i = 0; i < 8; i += 1) {
       const ph = (t * 0.16 + i / 8) % 1;
       const hh = Math.sin(i * 12.9898 + 3.7) * 43758.5453;
       const jx = (hh - Math.floor(hh)) - 0.5;
-      const cr = Math.round(150 - ph * 62);
-      const cg = Math.round(100 - ph * 26);
-      const cb = Math.round(84 + ph * 4);
+      const cr = Math.round(120 + ph * 52);
+      const cg = Math.round(80 + ph * 48);
+      const cb = Math.round(62 + ph * 50);
       softPuff(
         ctx,
-        p.x + jx * w * 0.22 + ph * w * 0.7,
-        p.y - h * 2.9 - ph * h * 2.6,
-        (5 + ph * 13) * p.s * 0.4,
-        `rgba(${cr},${cg},${cb},${0.5 * (1 - ph * 0.5)})`,
+        p.x + jx * w * 0.22 + ph * w * 0.8,
+        p.y - h * 2.9 - ph * h * 3.0,
+        (6 + ph * 14) * p.s * 0.4,
+        `rgba(${cr},${cg},${cb},${0.58 * (1 - ph * 0.12)})`,
         `rgba(${cr},${cg},${cb},0)`,
         0.8,
       );
