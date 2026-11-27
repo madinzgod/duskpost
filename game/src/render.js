@@ -2449,6 +2449,57 @@ function drawStorm(ctx, v, storm, t) {
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
+  // V38: a BG2 pass for the cell-foot neighbour box (320,380,480,470:
+  // sd 7.04, 1,447 px — V38 audit problem 1). The box sits at fx
+  // −0.18…0.00, fy −0.09…+0.05, the same fy band as the slab and
+  // immediately east of it, but BG stops at fx −0.10, so the box's
+  // eastern two thirds sit outside the grain entirely. 12 hashed
+  // steepPuffs, fx −0.18…−0.06 (narrowed in the revision, see below),
+  // fy −0.02…+0.10, fr 0.04–0.07R, lit 1-in-2 at 0.38 / dark 0.40,
+  // salts 51–53 — the BG recipe in the window BG never covered,
+  // radius floor ≥9 px. BG itself is NOT widened: re-spreading its
+  // 24 puffs would thin the slab's proven 8/24 coverage, and the V37
+  // first render (fx to +0.10) proved the eastern extension costs
+  // flash field.
+  // Hash-proven (probe38-bg2.mjs): at storm 8/12 centres in the
+  // neighbour box, 6 lit / 6 dark, 0 on any panel, 0 off-frame; at
+  // cover 12/12 off-frame; rescue cell off-frame; at approach and
+  // delivery the centres sit on the cells' feet at the 9 px floor,
+  // the same as the existing mottle; at map they land under the
+  // debrief panel.
+  // V38 REVISION (first render: the neighbour box goes sd 7.04 →
+  // 11.22 with 3,301 px and the 3× crop reads as cloud lumps — the
+  // guard is met — but the flash field dips sd 39.64 → 37.49, past
+  // the −2.5% guard: BG2's eastern puffs overlap the bolt's glow.
+  // The fx range narrows −0.18…0.00 → −0.18…−0.06: the easternmost
+  // centres move 0.06R (≈52 px) west of the bolt channel, while a
+  // puff at fx −0.06 with fr 0.07R still spills to fx +0.01, so the
+  // box's eastern edge keeps coverage. Re-proven
+  // (probe38-bg2.mjs, narrowed window).
+  for (let i = 0; i < 12; i += 1) {
+    const fx = -0.18 + (i / 11) * 0.12 + (grain(i, 51) - 0.5) * 0.05;
+    const fy = -0.02 + grain(i, 52) * 0.12;
+    const fr = 0.04 + grain(i, 53) * 0.03;
+    const lit = i % 2 === 0;
+    steepPuff(
+      ctx,
+      cx + fx * R,
+      baseY - bodySpan * fy,
+      Math.max(fr * R, 9),
+      lit ? 'rgba(122,96,128,0.38)' : 'rgba(30,26,48,0.40)',
+      lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
+    );
+  }
+  // V38 REVERTED (revision): the FG flank-grain pass (16 hashed
+  // steepPuffs, fx 0.58…0.74, fy 0.19…0.31, the BG recipe) is
+  // REMOVED after the first render proved it WORSE, not unproven:
+  // the tight box goes sd 12.27 → 7.45 with mean 45.7 → 56.4
+  // (+10.7, past the +10 guard) and the 3× crop reads as a flat
+  // pale mauve wash, the gradient ramp gone — the V29 eastern-grain
+  // wash repeated at small radius. The flank's smooth gradient
+  // cannot take lit puffs at 0.38 at any radius tried. The fifth
+  // attempt is spent; the tight box returns to EXACTLY V37's
+  // numbers (sd 12.27, mean 45.7, 1,121 px) and the problem stands.
   // V16 rev: the dash pass is REMOVED — the first render's
   // dashes read as scratches, a separate layer of thin dark
   // marks over the cloud, and the pale discs are still readable
