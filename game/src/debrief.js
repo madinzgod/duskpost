@@ -98,6 +98,58 @@ export function drawRouteMap(ctx, world, game, plane, t) {
     ctx.stroke();
   }
 
+  // V42 CHART-LAND: the graticule alone still left the band
+  // reading as a diagram — bare dots floating on blank water.
+  // A chart shows the land and the water's depth: under every
+  // island a soft landmass tint and two depth-contour rings
+  // (bathymetry), drawn before everything else in the band so
+  // the route and the marks sit on top of the geography.
+  world.islands.forEach((isl) => {
+    const x = mx(isl.z);
+    const y = my(isl.x);
+    const r = isl.r * 0.17;
+    ctx.fillStyle = 'rgba(150,190,170,0.08)';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(191,230,242,0.10)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(191,230,242,0.06)';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.9, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  // A compass rose in the band's empty lower-right — the one
+  // piece of furniture every chart carries and this one lacked.
+  const roseX = 1012;
+  const roseY = 392;
+  ctx.strokeStyle = 'rgba(255,196,107,0.45)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(roseX, roseY, 30, 0, Math.PI * 2);
+  ctx.stroke();
+  for (let k = 0; k < 8; k += 1) {
+    const ang = (k * Math.PI) / 4;
+    const len = k % 2 === 0 ? 27 : 15;
+    const dx = Math.sin(ang);
+    const dy = -Math.cos(ang);
+    ctx.fillStyle = `rgba(255,196,107,${k % 2 === 0 ? 0.5 : 0.28})`;
+    ctx.beginPath();
+    ctx.moveTo(roseX + dx * len, roseY + dy * len);
+    ctx.lineTo(roseX - dy * 4, roseY + dx * 4);
+    ctx.lineTo(roseX + dy * 4, roseY - dx * 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = '#ffe9c9';
+  ctx.font = '700 14px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', roseX, roseY - 36);
+
   // Storm cell: a purple shaded circle with a bolt, where the cell stands.
   const st = world.storm;
   const stX = mx(st.z);
