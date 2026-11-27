@@ -1118,6 +1118,144 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
+  // V35: a PA pass — the cover's AND the rescue's mid-right sea has
+  // a DEAD FLAT pocket at (720–880, 560–600): sd 1.4 / 3.8 in the
+  // 80×40 fine scan, one pale dash in the 3× crop (V35 audit
+  // problem 1). The pocket is owned by nobody: the near pass ends
+  // at py 515, the L-deep pass is px ≤450, the deep-2 pass starts
+  // at py 658. Same window shape and dash as the deep passes, px
+  // 720–880, py horizon+212…+252, gate fwd 25–60, count 30, salt
+  // 89.3. Hash-proven before rendering (sea-probe35b.mjs): 30/30
+  // kept at cover AND rescue, 30/30 in the pocket, 0/30 at
+  // approach, delivery and storm, 0 on any panel/pill. At map the
+  // samples land under the debrief drawing — the render diff must
+  // confirm the map is unchanged or changed only off-panel.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 30; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 89.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 720 + hash(1) * 160;
+    const py = v.horizon + 212 + hash(2) * 40;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 25 || fwd > 60) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V35: a PB pass — a second flat pocket at (960–1040, 640–680):
+  // sd 2.6, one pale dash in the 3× crop (V35 audit problem 2).
+  // It sits in the gap between the L-deep pass (ends py 658) and
+  // the deep-2 pass (starts py 658) at px 960–1040. Same shape, px
+  // 960–1040, py horizon+292…+332, gate fwd 20–40, count 20, salt
+  // 89.5. Hash-proven before rendering (sea-probe35b.mjs): 20/20
+  // kept at cover AND rescue, 20/20 in the pocket, 0/20 at
+  // approach, delivery and storm, 0 on any panel/pill. Map diff
+  // guard as in the PA pass above.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 20; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 89.5) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 960 + hash(1) * 80;
+    const py = v.horizon + 292 + hash(2) * 40;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 20 || fwd > 40) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V35: a PC pass — a thin pocket at (480–560, 470–510): sd 6.0
+  // with ~3 dashes (V35 audit problem 3). A density pocket, not a
+  // gap: the near pass (fwd 60–200) covers py 470–510 but spreads
+  // 180 dashes over the whole sea. Same shape, px 480–560, py
+  // horizon+122…+162, gate fwd 55–80, count 20, salt 89.9.
+  // Hash-proven before rendering (sea-probe35c.mjs): 19/20 kept at
+  // cover AND rescue, 19/19 in the pocket, 0/20 at approach,
+  // delivery and storm, 0 on any panel. Map diff guard as above.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 20; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 89.9) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 480 + hash(1) * 80;
+    const py = v.horizon + 122 + hash(2) * 40;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 55 || fwd > 80) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V35: an AB pass — the approach frame's bottom-right sea corner
+  // is thin (y640 cells sd 4.7 / 3.3, y700 cells 6.37 / 4.62; V35
+  // audit problem 5). The V33 costing (no gate separates the
+  // approach corner from the delivery frame's strip-side grass) is
+  // answered by the fwd probe (sea-probe35.mjs): at the approach
+  // camera the corner is fwd 122.3–183.6, all sea; at the delivery
+  // camera the same rect is fwd 47.7–70.6, all land — disjoint.
+  // Same shape, px 960–1280, py horizon+278…+420, gate fwd
+  // 100–200, count 40, salt 89.7. Hash-proven before rendering
+  // (sea-probe35b.mjs): 40/40 kept at approach ONLY, 38 in the
+  // corner, 0/40 at every other camera, 0 on any panel.
+  // V35 REVISION (first render: the corner reads as textured water
+  // now, but only 1 of 4 cells meets the ≥8 guard — y640 x1120
+  // 6.9, y700 x960 7.50, y700 x1120 7.30 — the mechanism is density,
+  // not shape, so the count lifts 40 → 60 with the window, gate
+  // and shape unchanged; re-proven sea-probe35d.mjs, 60/60 kept at
+  // approach only, 57 in the corner).
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 60; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 89.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 960 + hash(1) * 320;
+    const py = v.horizon + 278 + hash(2) * 142;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 100 || fwd > 200) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
   // V18: a left-weighted mid-band pass — the mirror of V17's
   // right-weighted one. The cover's far-left sea (px 0–150, py
   // 430–470) is fwd 902–1321 at the cover camera — the mid band —
@@ -3079,6 +3217,53 @@ function drawIsland(ctx, v, isl, t, light, world) {
         ctx.fillStyle = hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
         ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.5, srot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // V35: an E2-left pass for the delivery frame's y700 grass
+      // cell, whose LEFT half is bare of bright marks (1120–1200,
+      // 700–740: 0 px >med+12 of 3,200; the cell as a whole sd 5.90
+      // vs the ≥8 guard — V35 audit problem 4, the V34 partial
+      // continued). The E2 pass's pale dashes do not read >12
+      // there, at this grazing angle. Same fixed-point height
+      // inversion, island clip, radius floor 3.0, tones and dash
+      // shape as the E2 revision, rect px 1120–1200, py 700–750,
+      // count 80, salts 97–103. Hash-proven (sea-probe35b.mjs):
+      // 80/80 kept at delivery, on land 80/80, 63 in the cell, 26
+      // pale; 0 on land at approach, rescue, map, cover and storm.
+      // The strip and the DUSKPOST pill draw after this, on top,
+      // so no speck ever dots the runway or the pill.
+      // V35 REVISION (first render: the left half goes 0 → 341 px
+      // >med+12 but the cell as a whole is still short of its guard
+      // — sd 6.58 vs ≥8 — because the RIGHT half (5.92) got
+      // nothing: the mechanism is density across the whole cell, so
+      // the rect widens to the full cell px 1120–1280 and the count
+      // lifts 80 → 140 with the shape and tones unchanged;
+      // re-proven sea-probe35d.mjs, 140/140 kept at delivery, on
+      // land 140/140, 58 in the left half and 52 in the right half,
+      // 62 pale; 0 on land elsewhere).
+      for (let i = 0; i < 140; i += 1) {
+        const sx = 1120 + sh(i, 97) * 160;
+        const sy = 700 + sh(i, 98) * 50;
+        let swx = 0, swz = 0, shgt = 0;
+        for (let it = 0; it < 3; it += 1) {
+          const ss = (sy - v.horizon) / (v.camY - shgt);
+          if (ss <= 0) break;
+          const sfwd = v.focal / ss;
+          const sright = (sx - VIEW_W / 2) / ss;
+          swx = v.camX + sfwd * v.sinH + sright * v.cosH;
+          swz = v.camZ + sfwd * v.cosH - sright * v.sinH;
+          shgt = world.heightAt(swx, swz);
+        }
+        const sp = project(v, swx, shgt, swz);
+        if (!sp || sp.x < 1120 || sp.x > 1280 || sp.y < 700 || sp.y > 750) continue;
+        const sr = clamp(sp.s * 0.75, 3.0, 4.5) * (0.7 + sh(i, 100) * 0.6);
+        const srot = (sh(i, 101) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 102) * 1.5;
+        ctx.fillStyle = sh(i, 99) > 0.62
+          ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 1.17)
+          : hexA(toneLand('#1f4030', '#0c1c14'), speckA * 1.3);
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.75, srot, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.restore();
