@@ -1079,6 +1079,45 @@ function drawSea(ctx, v, plane, light) {
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
+  // V34: a deep-3 pass — the cover's AND the rescue's bottom-right
+  // corner sea is DEAD FLAT one band lower still (x960–1120,
+  // y740–780: sd 1.24, 0 px >med+12 of 6,400, mean exactly 56 —
+  // V34 audit problem 1): the deep-2 pass ends at py horizon+392
+  // = 740, and the band py 740–780 (fwd 23–25.5) is inside its
+  // fwd gate but outside its window, so it is owned by nobody.
+  // The D1 flat-scan never looked below y700, so the band was
+  // never scanned until this audit. Same window shape as deep-2,
+  // one band lower (py horizon+392…+432), px 960–1130 — the x1120
+  // cell is carried by the DUSKPOST pill and needs nothing — gate
+  // fwd 20–35. Hash-proven before rendering (sea-probe34.mjs):
+  // 40/40 kept at the cover AND rescue cameras, 36 of them inside
+  // the target cell, 0/40 at approach, delivery and storm, 0 on
+  // any panel, 0 in the pill zone (px >1140 is outside the pass).
+  // At the map camera the samples land under the chart panel
+  // (hidden) — the render diff must confirm the map is unchanged.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 40; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 88.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 960 + hash(1) * 170;
+    const py = v.horizon + 392 + hash(2) * 40;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 20 || fwd > 35) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
   // V18: a left-weighted mid-band pass — the mirror of V17's
   // right-weighted one. The cover's far-left sea (px 0–150, py
   // 430–470) is fwd 902–1321 at the cover camera — the mid band —
@@ -2938,6 +2977,106 @@ function drawIsland(ctx, v, isl, t, light, world) {
         ctx.fillStyle = sh(i, 73) > 0.62
           ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 0.9)
           : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.5, srot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // V34: an east-bottom pass for the delivery frame's bottom-
+      // right grass (V34 audit problem 2): the corner cells read
+      // (1120,640,1280,680) sd 4.02 with 21 px >med+12 and
+      // (1120,700,1280,740) sd 4.62 with 85 px — a large flat
+      // dark-green field below y~660 with almost no marks — because
+      // NO pass covers py >640 (the east pass ends there, the main
+      // pass scatters over the whole island disc). Same fixed-point
+      // height inversion, island clip, tones and dash shape as the
+      // east/west passes, rect px 960–1280, py 640–750, count 120,
+      // salts 81–86. Hash-proven (sea-probe34b.mjs): 120/120 kept
+      // at delivery, on land 120/120, 15 in the y640 cell and 25 in
+      // the y700 cell; clip-proven (sea-probe34c.mjs) 0/120 inside
+      // Kelapa's outline at approach, rescue and map — the pass
+      // draws ONLY at delivery. The strip and the DUSKPOST pill draw
+      // after this, on top, so no speck ever dots the runway or the
+      // pill.
+      // V34 REVISION (first render: the pass drew but its dashes
+      // are sub-pixel at the near grass — the grazing angle
+      // compresses sp.s to the 0.9 radius floor, so each dash shifts
+      // its pixels by only ±5–7, under the 12 threshold: the y640
+      // cell moved 4.02 → 4.49 and the y700 cell 0.00 → 2.83 with 0
+      // px >med+12. The V13 lesson, applied to this pass only:
+      // radius floor 0.9 → 3.0, height factor 0.5 → 0.75, alpha
+      // ×1.3, and the sampling biased to the flat corner itself
+      // (px 1120–1280 — the rest of the rect already reads sd 14.5)
+      // with count 120 → 200. Re-proven (sea-probe34d.mjs, count
+      // 160): 59 in the y640 cell and 59 in the y700 cell, on land
+      // 160/160 at delivery, 0 elsewhere; count 200 is the same
+      // distribution with more samples.
+      for (let i = 0; i < 200; i += 1) {
+        const sx = 1120 + sh(i, 81) * 160;
+        const sy = 640 + sh(i, 82) * 110;
+        let swx = 0, swz = 0, shgt = 0;
+        for (let it = 0; it < 3; it += 1) {
+          const ss = (sy - v.horizon) / (v.camY - shgt);
+          if (ss <= 0) break;
+          const sfwd = v.focal / ss;
+          const sright = (sx - VIEW_W / 2) / ss;
+          swx = v.camX + sfwd * v.sinH + sright * v.cosH;
+          swz = v.camZ + sfwd * v.cosH - sright * v.sinH;
+          shgt = world.heightAt(swx, swz);
+        }
+        const sp = project(v, swx, shgt, swz);
+        if (!sp || sp.x < 960 || sp.x > 1280 || sp.y < 640 || sp.y > 750) continue;
+        const sr = clamp(sp.s * 0.75, 3.0, 4.5) * (0.7 + sh(i, 84) * 0.6);
+        const srot = (sh(i, 85) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 86) * 1.5;
+        ctx.fillStyle = sh(i, 83) > 0.62
+          ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 1.17)
+          : hexA(toneLand('#1f4030', '#0c1c14'), speckA * 1.3);
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.75, srot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // V34: a triangle pass for the west field's bare facet
+      // triangle (V34 audit problem 3): the x160 cell (160,560,
+      // 320,600) reads sd 6.99 with 36 px >med+12 against the x0
+      // cell's 461 — the light facet right of the hard diagonal is
+      // nearly bare. The west pass's 48 samples DO land there (12
+      // of them, proven by sea-probe34.mjs) but read <12: the pale
+      // tufts collapse to the light facet's own tone at last light
+      // (median 76–78), and only the ~7 dark dashes show. Same dash
+      // shape and inversion as the west pass, rect px 160–320, py
+      // 560–600, count 20, salts 91–95, ALL-DARK tone (the
+      // triangle's visible texture is already dark dashes; the pale
+      // tone is wasted there). Hash-proven (sea-probe34b.mjs):
+      // 20/20 kept at delivery, all 20 in the triangle, on land
+      // 20/20; clip-proven (sea-probe34c.mjs) 0 inside the outline
+      // at rescue/map, 16/20 inside at approach (the west pass's
+      // own side effect — the approach-grass 2× crop is the guard,
+      // as in V32). The hard diagonal seam itself is NOT fixed by
+      // this pass (V34 audit problem 14) — only the triangle's
+      // density.
+      // V34 REVISION (first render: the cell moved 6.99 → 7.80,
+      // short of the ≥8 guard by 0.20 — the mechanism is density,
+      // not size, so the count lifts 20 → 32 with the shape and
+      // tone unchanged).
+      for (let i = 0; i < 32; i += 1) {
+        const sx = 160 + sh(i, 91) * 160;
+        const sy = 560 + sh(i, 92) * 40;
+        let swx = 0, swz = 0, shgt = 0;
+        for (let it = 0; it < 3; it += 1) {
+          const ss = (sy - v.horizon) / (v.camY - shgt);
+          if (ss <= 0) break;
+          const sfwd = v.focal / ss;
+          const sright = (sx - VIEW_W / 2) / ss;
+          swx = v.camX + sfwd * v.sinH + sright * v.cosH;
+          swz = v.camZ + sfwd * v.cosH - sright * v.sinH;
+          shgt = world.heightAt(swx, swz);
+        }
+        const sp = project(v, swx, shgt, swz);
+        if (!sp || sp.x < 160 || sp.x > 320 || sp.y < 560 || sp.y > 600) continue;
+        const sr = clamp(sp.s * 0.75, 0.9, 4.5) * (0.7 + sh(i, 93) * 0.6);
+        const srot = (sh(i, 94) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 95) * 1.5;
+        ctx.fillStyle = hexA(toneLand('#1f4030', '#0c1c14'), speckA);
         ctx.beginPath();
         ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.5, srot, 0, Math.PI * 2);
         ctx.fill();
