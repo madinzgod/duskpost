@@ -73,7 +73,7 @@ export function stageShot(name, seed) {
     plane.x = -470;
     plane.z = 2680;
     plane.y = 95;
-    plane.hdg = -0.09;
+    plane.hdg = -0.02; // V47 STORM-EAST: swing east so Tanjung comes fully in frame
     plane.speed = 38;
     plane.throttle = 0.66;
     plane.vy = 0.4;
@@ -278,7 +278,7 @@ export function stageShot(name, seed) {
     // the frame — a gate on the final, not a halo dead centre.
     for (const r of world.rings) if (r.z < plane.z) r.passed = true;
     const ring = world.rings.find((r) => !r.passed && r.z > plane.z) || world.rings[3];
-    ring.x = plane.x + 30;
+    ring.x = plane.x + 55; // V47 RING-CLEAR: the ring's arc clears the FINAL text
     ring.y = 14;
     ring.z = plane.z + 130;
     // V22: two far rings overlap into a bubble Venn mid-frame
