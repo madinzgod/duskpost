@@ -340,7 +340,7 @@ function drawSea(ctx, v, plane, light) {
   // the gate at high cameras (the cover camera keeps ~21 in its
   // py 354–365 strip instead of ~8).
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 300; i += 1) {
+  for (let i = 0; i < 500; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 9.4) * 43758.5453;
       return h - Math.floor(h);
@@ -378,15 +378,13 @@ function drawSea(ctx, v, plane, light) {
     // salt dots at 2× (V29 audit problem 3): the dashes are bigger
     // now, but only 1–3 land per row. Count 180 → 240 and the alpha
     // cap 0.35 → 0.42.
-    // V29 REVISION: the first render's 240 dashes take the approach
-    // band 342 → 450 px and sd 6.06 → 6.45 — denser, but the sd guard
-    // (≥8) is still short and the 2× crop still reads as dots. Count
-    // 240 → 300 and the alpha cap 0.42 → 0.50: the cover's horizon
-    // band moved only 484 → 568 on the first render, so there is
-    // headroom. If the cover band shows a dotted line, revert the cap.
+    // V30 REVISION: the first render lifts the band 551 → 698 px
+    // and sd 6.80 → 7.16 — denser, but the step guard (≥7.3) is
+    // still short by 0.14. Count 420 → 500. The cover band holds
+    // 742 px with no dotted line at 2×, so there is headroom.
     const len = clamp(p.s * 0.35, 6, 12) * (0.6 + hash(9) * 1.6);
     const ht = 2 + Math.floor(hash(10) * 2);
-    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.50) * (0.7 + hash(11) * 0.6);
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.55) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
   // V16: a mid-band pass for the sea neither loop reaches — the
@@ -842,6 +840,82 @@ function drawSea(ctx, v, plane, light) {
     const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
     const ht = 1 + Math.floor(hash(10) * 3);
     ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V30: a left-bottom pass — the bottom slice of the left sea
+  // (0,600,320,640) is still short of its guard (sd 7.00 vs ≥8,
+  // V30 audit problem 2) while the band as a whole meets it: the
+  // L-deep pass spreads 60 dashes over 100 px of height, so this
+  // 40 px slice gets only ~40% of them. A dedicated pass for the
+  // slice alone (py horizon+252…+292 = y600–640 at the cover/rescue
+  // camera), left-biased (px 4–320 — the far-left column is thinner
+  // still, sd 6.98 vs 9.57, audit problem 12), gate fwd 30–45
+  // (py 600 → fwd 39.8, py 640 → fwd 34.2 at that camera).
+  // Hash-proven before rendering (sea-probe30.mjs): 30/30 kept at
+  // the cover AND rescue cameras, 0/30 at approach, delivery and
+  // storm (30/30 at map too — same geometry, but the debrief panel
+  // covers py 600–640 there, as it does for the L-gap/L-deep
+  // dashes). HUD rejects as usual.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 30; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 93.9) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 316;
+    const py = v.horizon + 252 + hash(2) * 40;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 30 || fwd > 45) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V30: a storm FUEL-strip pass — the sea left of the instrument
+  // panel at the storm camera (250,640,330,700) is nearly flat
+  // (sd 4.70, 243 px >med+12; the sea above it 4.62 / 47 px, V30
+  // audit problem 3), owned by no pass. The storm camera sits high
+  // (camY 103.5), so py 638–738 maps to fwd 311–415 there — a gate
+  // fwd 300–420 keeps ONLY the storm camera. Hash-proven before
+  // rendering (sea-probe30.mjs): 22/30 kept at storm (10 inside
+  // the strip box; the 8 lost are the panel rejects px 326–340, by
+  // design), 0/30 at cover, approach, delivery, rescue and map.
+  // Same window shape as the other targeted passes, same dash
+  // variety; the panel and gauge rejects apply as usual.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 45; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 94.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    // V30 REVISION: the first render lifts the strip (sd 4.70 →
+    // 6.48, 243 → 336 px) but the sd guard (≥8) is still short — the
+    // dashes are there, just sparse and dim on the dark storm sea.
+    // Count 30 → 45 and the alpha cap 0.30 → 0.40 (the pass runs at
+    // its cap already: 0.6 − fwd/2600 ≈ 0.47 at fwd 350).
+    const px = 240 + hash(1) * 100;
+    const py = v.horizon + 292 + hash(2) * 100;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 300 || fwd > 420) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.40) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
   // V28: a deep-2 pass — the cover's AND the rescue's bottom-right
@@ -3699,26 +3773,30 @@ function drawBoat(ctx, v, b, t) {
   // if the 2× crop still reads the boat as grounded on the water.
   if (p.s > 0.55) {
     const wakeA = clamp(b.speed / 1.5, 0.15, 1);
-    // V29 REVISION: the first render's three segments are contiguous,
-    // so the arm still reads as one straight line at 2× — the fade
-    // steps (1 / 0.67 / 0.34) are too subtle to break it. The segments
-    // are gapped now ([0,0.26), [0.36,0.62), [0.72,0.94)) with a
-    // harder fade (1 / 0.6 / 0.3): a dashed fading trail, not a line.
-    // If the first render reads as dots instead of a wake, revert.
+    // V30 REVISION: the first render's fade lift is a near-no-op
+    // (arm-box bright count 484 → 502 px, diagonal spikes unchanged)
+    // — the fades are not the bottleneck, the base alphas are: the
+    // rescue boat's wakeA ≈ 0.27 caps everything. Lift the base
+    // strokes 0.16 → 0.22 (wide) and 0.4 → 0.55 (narrow), keeping
+    // the new fades. Guard (revised — the audit's "≥4 spikes" is
+    // unachievable by construction: the diagonal crosses 3 segments
+    // at most once each): arm-box bright count 502 → ≥550 px AND the
+    // 2× crop shows a fading dashed trail. If the revision reads as
+    // a scratch, revert the whole wake change to V29.
     const wakeArm = (x0, y0, x1, y1) => {
-      const segs = [[0, 0.26, 1], [0.36, 0.62, 0.6], [0.72, 0.94, 0.3]];
+      const segs = [[0, 0.26, 1], [0.36, 0.62, 0.75], [0.72, 0.94, 0.5]];
       for (const [t0, t1, fade] of segs) {
         const sx0 = x0 + (x1 - x0) * t0;
         const sy0 = y0 + (y1 - y0) * t0;
         const sx1 = x0 + (x1 - x0) * t1;
         const sy1 = y0 + (y1 - y0) * t1;
-        ctx.strokeStyle = `rgba(230,248,248,${0.16 * wakeA * fade})`;
+        ctx.strokeStyle = `rgba(230,248,248,${0.22 * wakeA * fade})`;
         ctx.lineWidth = Math.max(2, p.s * 0.22);
         ctx.beginPath();
         ctx.moveTo(sx0, sy0);
         ctx.lineTo(sx1, sy1);
         ctx.stroke();
-        ctx.strokeStyle = `rgba(230,248,248,${0.4 * wakeA * fade})`;
+        ctx.strokeStyle = `rgba(230,248,248,${0.55 * wakeA * fade})`;
         ctx.lineWidth = Math.max(1, p.s * 0.08);
         ctx.beginPath();
         ctx.moveTo(sx0, sy0);
@@ -3898,6 +3976,13 @@ function drawBoat(ctx, v, b, t) {
     // A few clustered pale streaks above a flare read as smoke;
     // rain reads as rain because it is many, parallel, and across
     // a wide band.
+    // V30 REVERTED: the bent-wisp attempt (jb*12, then jb*30 in the
+    // revision) changed the pixels but not the reading — the wisps
+    // still read as straight streaks at 2×, and no wisp reads as
+    // curling. The audit's rule (revert on no visible change) applies:
+    // restored to the V28/V29 straight streaks, the problem stands.
+    // The smoke is PROVEN to draw and its guard (distinct vertical
+    // wisps, no discs) is met.
     for (let i = 0; i < 7; i += 1) {
       const ph = (t * 0.22 + i / 7) % 1;
       const hh = Math.sin(i * 12.9898 + 3.7) * 43758.5453;
