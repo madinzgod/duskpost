@@ -340,7 +340,7 @@ function drawSea(ctx, v, plane, light) {
   // the gate at high cameras (the cover camera keeps ~21 in its
   // py 354–365 strip instead of ~8).
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 180; i += 1) {
+  for (let i = 0; i < 300; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 9.4) * 43758.5453;
       return h - Math.floor(h);
@@ -374,9 +374,19 @@ function drawSea(ctx, v, plane, light) {
     // floor and half are 1 px tall (runs 3–7 px, band sd 5.43).
     // Length floor 4 → 6 and height 1–3 → 2–3 px — wavelets, not
     // dots. Cap stays 12.
+    // V29: the band meets its count guard (342) but still reads as
+    // salt dots at 2× (V29 audit problem 3): the dashes are bigger
+    // now, but only 1–3 land per row. Count 180 → 240 and the alpha
+    // cap 0.35 → 0.42.
+    // V29 REVISION: the first render's 240 dashes take the approach
+    // band 342 → 450 px and sd 6.06 → 6.45 — denser, but the sd guard
+    // (≥8) is still short and the 2× crop still reads as dots. Count
+    // 240 → 300 and the alpha cap 0.42 → 0.50: the cover's horizon
+    // band moved only 484 → 568 on the first render, so there is
+    // headroom. If the cover band shows a dotted line, revert the cap.
     const len = clamp(p.s * 0.35, 6, 12) * (0.6 + hash(9) * 1.6);
     const ht = 2 + Math.floor(hash(10) * 2);
-    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.35) * (0.7 + hash(11) * 0.6);
+    ctx.globalAlpha = clamp(0.5 - p.fwd / 2600, 0.18, 0.50) * (0.7 + hash(11) * 0.6);
     ctx.fillRect(p.x - len / 2, p.y, len, ht);
   }
   // V16: a mid-band pass for the sea neither loop reaches — the
@@ -749,6 +759,81 @@ function drawSea(ctx, v, plane, light) {
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
     if (fwd < 60 || fwd > 80) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V29: a left-gap pass — the mirror of the V27 gap pass. The cover's
+  // AND the rescue's lower-LEFT sea is DEAD FLAT at py 515–558
+  // (sd 1.42, 0 px >med+12, V29 audit problem 1): the V27 gap pass is
+  // right-only (px 850–1280), the V28 gap-2 left mirror ends at py 515,
+  // and the near-water pass gates fwd ≥ 80 (ends py 473) — so the left
+  // sea at py 515–558 is owned by nobody. Same window shape as the V27
+  // pass, same gate (fwd 40–70), on the other side. Hash-proven before
+  // rendering (sea-probe29.mjs): 30/30 kept at the cover AND rescue
+  // cameras (18 of them inside px 4–320), 0/30 at approach, delivery
+  // and storm.
+  // V29 REVISION: the first render lifts the bands (y515–558 sd
+  // 1.42 → 7.44, 0 → 515 px; y558–600 sd 1.12 → 6.79, 0 → 378 px;
+  // y600–640 sd 1.31 → 6.53, 0 → 310 px) but the sd guard (≥8) is
+  // short in all three — the dashes are there, just sparse per box.
+  // Count 30 → 45: the extra density lands in the same bands.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 45; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 93.1) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 446;
+    const py = v.horizon + 167 + hash(2) * 43;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 40 || fwd > 70) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V29: a left-deep pass — the mirror of the V23 deep pass. The left
+  // sea at py 558–640 is DEAD FLAT too (sd 1.12 / 1.31, 0 px >med+12,
+  // V29 audit problem 1): the V23 deep pass is right-only (px 850–
+  // 1280), the V28 deep-2 pass is right-only (px 960–1280), and the
+  // V21 near pass's fwd band [60,200] ends at py 515. Same window
+  // shape as the deep pass, one band lower than the L-gap pass (py
+  // horizon+210…+310), gate fwd 25–60. Hash-proven before rendering
+  // (sea-probe29.mjs): 30/40 kept at the cover AND rescue cameras (18
+  // in-strip; the 10 lost are the panel rejects, by design), 0/40 at
+  // approach, delivery and storm. The fuel panel (y641+) sits below
+  // the window's end; the instrument panel is rejected outright.
+  // V29 REVISION: as the L-gap pass above — the first render's
+  // 40 dashes leave the deep bands short of the sd guard (6.79 /
+  // 6.53 vs ≥8). Count 40 → 60.
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 60; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 93.7) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 4 + hash(1) * 446;
+    const py = v.horizon + 210 + hash(2) * 100;
+    if (py > 616 && py < 794 && px > 326 && px < 954) continue; // instrument panel
+    if (py > 641 && py < 796 && px > 16 && px < 249) continue; // fuel/hull gauges
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 25 || fwd > 60) continue;
     const right = (px - VIEW_W / 2) / s;
     const wx = v.camX + fwd * v.sinH + right * v.cosH;
     const wz = v.camZ + fwd * v.cosH - right * v.sinH;
@@ -1807,6 +1892,18 @@ function drawStorm(ctx, v, storm, t) {
       lit ? 'rgba(122,96,128,0)' : 'rgba(30,26,48,0)',
     );
   }
+  // V29 REVERTED (revision): an eastern flank grain pass mirroring
+  // the V14-rev western pass (fx 0.10…1.15, fy 0.25…0.60, 8
+  // steepPuffs, fr 0.16–0.26R, lit 1-in-2 at 0.50/0.44) was tried for
+  // the smooth flank (V29 audit problem 2 — the box sits at fx
+  // 0.60–0.72, fy 0.42–0.48, inside the cell's silhouette, where no
+  // grain pass reaches). The first render proved it WORSE, not
+  // unproven: the lit puffs (radius up to 0.26R = 226 px) washed the
+  // box bright and flat — tight-box sd 12.27 → 6.05, mean 45.7 →
+  // 75.5. The V14-rev device does not mirror: the western puffs land
+  // mostly off-frame, the eastern ones land on the sunlit visible
+  // flank at full brightness. Removed; the tight box returns to
+  // V28's numbers and the problem stands (fourth attempt out).
   // V15 rev: the first render's 10 puffs read as pale discs —
   // bokeh bubbles floating over the cloud, not grain (measured
   // in the 2× shoulder crop: distinct round discs at 0.50/0.45
@@ -3602,19 +3699,32 @@ function drawBoat(ctx, v, b, t) {
   // if the 2× crop still reads the boat as grounded on the water.
   if (p.s > 0.55) {
     const wakeA = clamp(b.speed / 1.5, 0.15, 1);
+    // V29 REVISION: the first render's three segments are contiguous,
+    // so the arm still reads as one straight line at 2× — the fade
+    // steps (1 / 0.67 / 0.34) are too subtle to break it. The segments
+    // are gapped now ([0,0.26), [0.36,0.62), [0.72,0.94)) with a
+    // harder fade (1 / 0.6 / 0.3): a dashed fading trail, not a line.
+    // If the first render reads as dots instead of a wake, revert.
     const wakeArm = (x0, y0, x1, y1) => {
-      ctx.strokeStyle = `rgba(230,248,248,${0.16 * wakeA})`;
-      ctx.lineWidth = Math.max(2, p.s * 0.22);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(230,248,248,${0.4 * wakeA})`;
-      ctx.lineWidth = Math.max(1, p.s * 0.08);
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
+      const segs = [[0, 0.26, 1], [0.36, 0.62, 0.6], [0.72, 0.94, 0.3]];
+      for (const [t0, t1, fade] of segs) {
+        const sx0 = x0 + (x1 - x0) * t0;
+        const sy0 = y0 + (y1 - y0) * t0;
+        const sx1 = x0 + (x1 - x0) * t1;
+        const sy1 = y0 + (y1 - y0) * t1;
+        ctx.strokeStyle = `rgba(230,248,248,${0.16 * wakeA * fade})`;
+        ctx.lineWidth = Math.max(2, p.s * 0.22);
+        ctx.beginPath();
+        ctx.moveTo(sx0, sy0);
+        ctx.lineTo(sx1, sy1);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(230,248,248,${0.4 * wakeA * fade})`;
+        ctx.lineWidth = Math.max(1, p.s * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(sx0, sy0);
+        ctx.lineTo(sx1, sy1);
+        ctx.stroke();
+      }
     };
     wakeArm(p.x - w * 0.5, p.y, p.x - w * 1.5, p.y + h * 0.8 + Math.sin(t * 2 + b.z) * 1.4);
     wakeArm(p.x + w * 0.5, p.y, p.x + w * 1.3, p.y + h * 0.7);
