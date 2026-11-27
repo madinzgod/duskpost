@@ -263,7 +263,18 @@ export function stageShot(name, seed) {
     plane.x = isl.x - 74;
     plane.z = isl.z - 235;
     plane.y = 8;
-    plane.hdg = 0.07;
+    // V50 COVER-TURN: the sun is screen-fixed (sunX =
+    // VIEW_W*0.335) while the storm cell is world-projected and sits
+    // dead on the sun (V43 probe: cell disc (422,299) r123 vs sun
+    // (429,285) r47) — the disc has never shown on the cover. Turn
+    // the camera ~0.12 rad (~7 deg, a turn onto final, HDG ~011 deg):
+    // the cell swings ~166 px left off the disc, the island swings
+    // with it (the lighthouse enters frame at the right edge), and the
+    // world-anchored furniture (ring, strip, FINAL text, ladder,
+    // CAHAYA pill) moves together, so no screen-space collision.
+    // Probe-proven: the disc reads in open sky and the lighthouse
+    // reads as a red-white tower at the right edge.
+    plane.hdg = 0.19;
     plane.speed = 34;
     plane.throttle = 0.72;
     plane.vy = -0.6;

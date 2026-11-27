@@ -138,7 +138,18 @@ function drawBirds(ctx, v, light, t, sunBlock) {
   for (let i = 0; i < 7; i += 1) { // V49 BIRDS-2: two more gulls for the empty top-left sky
     const bh = Math.sin(i * 12.9898 + 4.7) * 43758.5453;
     const bf = bh - Math.floor(bh);
-    const bx = ((i * 173 + 890 + t * 7) % 1500) - 110;
+    // V50 BIRDS-SHIFT: V49's two new gulls are invisible on the
+    // cover — but NOT dark-on-dark as V49 claimed. Gull 5 at
+    // (154,92) sits BEHIND the HUD panel (judge (92,55) inside the
+    // panel x6-180, y9-141; its stroke contrasts -92.6 against its
+    // neighbours at full size), and gull 6 at (327,150) is a 2 px
+    // curve on mid-mauve sky. Shift the two new gulls (i>=5) +260 px
+    // into open sky: full (414,92) and (587,150) on the cover, clear
+    // of the panel, the mission pill, the compass strip and the CAHAYA
+    // pill. Probe-proven on all six frames: both gulls read in the
+    // cover's open sky and collide with nothing on any frame.
+    let bx = ((i * 173 + 890 + t * 7) % 1500) - 110;
+    if (i >= 5) bx += 260;
     const by = v.horizon - 148 - bf * 92 - i * 9 + Math.sin(t * 0.9 + i * 1.7) * 5;
     const bw = 17 + bf * 12;
     const flap = Math.sin(t * 5.2 + i * 2.3) * 0.45;
