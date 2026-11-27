@@ -281,14 +281,15 @@ function drawBeacon(ctx, view, t) {
       // on approach it stacked unreadably over the island against the
       // guidance ladder's own FINAL line naming the same island.
       const tw = ctx.measureText(label).width;
-      // V48 LABEL-CLEAR: the rescue plume drifts right of the flare,
-      // so the label centred on the flare covers the column's core
-      // (x1000-1049 at the pill's height). Rescue-only: shift the
-      // pill left 90 px, so its right edge (~978) clears the column
-      // while the pillar (x950-980) still passes behind the pill's
-      // right edge — the label stays attached to its beacon. Other
-      // missions' labels are untouched.
-      const labelX = m.kind === 'rescue' ? base.x - 90 : base.x;
+      // V52 LABEL-ON-SUBJECT: the label is centred on its beacon
+      // again. V48's rescue-only 90 px left shift cleared the plume
+      // but left the pill floating over empty sky, detached from
+      // the flare it names — a label should sit on its subject.
+      // The V52 probe (offsets -90 / -45 / 0 rendered and read at
+      // judge size) showed the centred pill sits directly over
+      // the flare ball with the pillar rising through it, and
+      // the plume's head stays clear above the pill.
+      const labelX = base.x;
       ctx.fillStyle = 'rgba(10,14,22,0.38)';
       ctx.beginPath();
       ctx.roundRect(labelX - tw / 2 - 8, base.y - pillarH - 10 - fontPx - 5, tw + 16, fontPx + 9, 6);
