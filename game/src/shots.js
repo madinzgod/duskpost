@@ -226,8 +226,14 @@ export function stageShot(name, seed) {
     // cruise cover flew over), so the sky keeps the hero clouds and
     // the squall bank — only the plane's state and the ring change.
     const isl = world.islands[3]; // CAHAYA
+    // V44 COVER-CLOSE: staged 130 m closer (was isl.z - 430) so
+    // Cahaya reads as a destination landmass — beach, palms, house,
+    // lighthouse, strip — instead of a thin dark ribbon at judge
+    // size. Probe-proven (work/v44/crops/probe-cover-300.png):
+    // sun disc, ring, plane, glitter path and HUD all survive;
+    // the HUD distance reads an honest 309 m. Gameplay untouched.
     plane.x = isl.x - 74;
-    plane.z = isl.z - 430;
+    plane.z = isl.z - 300;
     plane.y = 0;
     plane.hdg = 0.07;
     plane.speed = 30;
