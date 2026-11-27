@@ -156,13 +156,22 @@ export function stageShot(name, seed) {
   } else if (name === 'rescue') {
     // Floating beside the rescue boat off Batu, flare lit, the crew
     // waiting: the mission the set has never shown. The plane sits on
-    // the water ~90 m north of the boat and looks south toward it, so
+    // the water ~60 m north of the boat and looks south toward it, so
     // the boat hangs ahead-right with Batu's palms beyond it and the
     // flare's light on the sea — a second water scene, a different
     // verb from the cover's takeoff. Speed 0, so no spray: she floats.
+    // V45 RESCUE-CLOSE: staged 30 m closer (was boat.z + 90, boat.x
+    // + 40) so the boat reads as a boat — hull, cabin, flare — and
+    // the plume's column reads at judge size instead of hiding
+    // behind the label. Probe-proven (work/v45/crops/
+    // probe-rescue-60.png): the plume head stays inside the frame,
+    // the label does not collide with the mission card, the boat
+    // does not clip the right edge, and the HUD distance reads an
+    // honest 66 m. The 45 m probe is rejected: its plume head is
+    // cut by the top edge and the boat crowds the plane.
     const boat = world.rescueBoat;
-    plane.x = boat.x + 40;
-    plane.z = boat.z + 90;
+    plane.x = boat.x + 27;
+    plane.z = boat.z + 60;
     plane.y = 0;
     plane.hdg = Math.PI + 0.1;
     plane.speed = 0;
