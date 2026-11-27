@@ -458,14 +458,19 @@ function drawSea(ctx, v, plane, light) {
   // cameras. The storm camera's window maps to fwd 1108–1741, so
   // the gate rejects the pass there. Dashes vary like the deep
   // pass's (problem 5).
+  // V32 REVISION: the first render's window widening diluted the
+  // approach mid-right sea (9.89 → 9.25, 765 → 606 px) — the taller
+  // window spreads the same 40 dashes thinner. Count 40 → 48.
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 48; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 43.7) * 43758.5453;
       return h - Math.floor(h);
     };
     const px = 950 + hash(1) * 330;
-    const py = v.horizon + 70 + hash(2) * 40;
+    // V32: the window widens horizon+70…+110 → +70…+122 — the y458–470
+    // strip was owned by no pass (V32 audit problem 1).
+    const py = v.horizon + 70 + hash(2) * 52;
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
     if (fwd < 80 || fwd > 750) continue;
@@ -490,14 +495,18 @@ function drawSea(ctx, v, plane, light) {
   // only a third of its dashes in the narrow far-left strip. The px
   // sample is left-biased now (u²) and the count 40 → 50, so most
   // dashes land in the strip that is actually thin.
+  // V32 REVISION: the first render's mid-left box misses its guard
+  // by 0.10 (7.89 → 7.90 vs ≥8). Count 50 → 60.
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 50; i += 1) {
+  for (let i = 0; i < 60; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 53.1) * 43758.5453;
       return h - Math.floor(h);
     };
     const px = 4 + hash(1) * hash(1) * 446;
-    const py = v.horizon + 70 + hash(2) * 40;
+    // V32: the window widens horizon+70…+110 → +70…+122 — the y458–470
+    // strip was owned by no pass (V32 audit problem 1).
+    const py = v.horizon + 70 + hash(2) * 52;
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
     if (fwd < 80 || fwd > 750) continue;
@@ -521,14 +530,47 @@ function drawSea(ctx, v, plane, light) {
   // camera it lands on the mid sea (fwd 465–724, inside the gate);
   // at the storm camera the window maps to fwd 1110–1740, so the
   // gate rejects it there.
+  // V32 REVISION: the first render's x640 cell reads 7.39 (vs the
+  // ≥8 guard) — the centre pass's right edge is thin. Count 40 → 48.
   ctx.fillStyle = 'rgba(220,245,245,1)';
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 48; i += 1) {
     const hash = (salt) => {
       const h = Math.sin(i * 12.9898 + salt * 7.77 + 63.7) * 43758.5453;
       return h - Math.floor(h);
     };
     const px = 450 + hash(1) * 350;
-    const py = v.horizon + 70 + hash(2) * 40;
+    // V32: the window widens horizon+70…+110 → +70…+122 — the y458–470
+    // strip was owned by no pass (V32 audit problem 1).
+    const py = v.horizon + 70 + hash(2) * 52;
+    const s = (py - v.horizon) / v.camY;
+    const fwd = v.focal / s;
+    if (fwd < 80 || fwd > 750) continue;
+    const right = (px - VIEW_W / 2) / s;
+    const wx = v.camX + fwd * v.sinH + right * v.cosH;
+    const wz = v.camZ + fwd * v.cosH - right * v.sinH;
+    const p = project(v, wx, 0, wz);
+    if (!p) continue;
+    const len = clamp(p.s * 0.35, 4, 12) * (0.6 + hash(9) * 1.6);
+    const ht = 1 + Math.floor(hash(10) * 3);
+    ctx.globalAlpha = clamp(0.6 - p.fwd / 2600, 0.12, 0.30) * (0.7 + hash(11) * 0.6);
+    ctx.fillRect(p.x - len / 2, p.y, len, ht);
+  }
+  // V32: a seam pass for the cover's mid band — px 800–950 is covered
+  // by NONE of the three targeted passes (the centre pass ends at 800,
+  // pass A starts at 950), so the x800 cell reads sd 5.01 while its
+  // neighbours read 7–11 (V32 audit problem 1). Same window (py
+  // horizon+70…+122) and gate (fwd 80–750) as the widened targeted
+  // passes, own salt. Hash-proven: 30/30 kept at cover, approach,
+  // delivery and rescue, 23 in the (800,430,950,470) band; 0/30 at
+  // storm (its window maps to fwd 1108–1741, outside the gate).
+  ctx.fillStyle = 'rgba(220,245,245,1)';
+  for (let i = 0; i < 30; i += 1) {
+    const hash = (salt) => {
+      const h = Math.sin(i * 12.9898 + salt * 7.77 + 71.3) * 43758.5453;
+      return h - Math.floor(h);
+    };
+    const px = 800 + hash(1) * 150;
+    const py = v.horizon + 70 + hash(2) * 52;
     const s = (py - v.horizon) / v.camY;
     const fwd = v.focal / s;
     if (fwd < 80 || fwd > 750) continue;
@@ -2801,6 +2843,43 @@ function drawIsland(ctx, v, isl, t, light, world) {
         ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.5, srot, 0, Math.PI * 2);
         ctx.fill();
       }
+      // V32: a mirror of the east-field pass for the delivery frame's
+      // WEST field (px 0–300, py 560–640) — the lower-left grass reads
+      // as two flat green triangles (V32 audit problem 2): the main
+      // pass scatters 160 specks over the whole island disc, so the
+      // near slope at this grazing angle gets almost none, and the
+      // east pass covers px 980–1280 only. Same fixed-point height
+      // inversion, same tones and radius, salts 71–76. Projection-
+      // proven: 48/48 kept on land at the delivery camera, 0 on land
+      // at cover / storm / rescue / map (the island clip keeps it off
+      // any frame where the rect is not land); ~16 land at the
+      // approach camera's near-left grass — the approach-grass 2×
+      // crop is the guard for that side effect.
+      for (let i = 0; i < 48; i += 1) {
+        const sx = 0 + sh(i, 71) * 300;
+        const sy = 560 + sh(i, 72) * 80;
+        let swx = 0, swz = 0, shgt = 0;
+        for (let it = 0; it < 3; it += 1) {
+          const ss = (sy - v.horizon) / (v.camY - shgt);
+          if (ss <= 0) break;
+          const sfwd = v.focal / ss;
+          const sright = (sx - VIEW_W / 2) / ss;
+          swx = v.camX + sfwd * v.sinH + sright * v.cosH;
+          swz = v.camZ + sfwd * v.cosH - sright * v.sinH;
+          shgt = world.heightAt(swx, swz);
+        }
+        const sp = project(v, swx, shgt, swz);
+        if (!sp || sp.x < 0 || sp.x > 300 || sp.y < 560 || sp.y > 640) continue;
+        const sr = clamp(sp.s * 0.75, 0.9, 4.5) * (0.7 + sh(i, 74) * 0.6);
+        const srot = (sh(i, 75) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 76) * 1.5;
+        ctx.fillStyle = sh(i, 73) > 0.62
+          ? hexA(tone('#a8b878', '#4a5a3a'), speckA * 0.9)
+          : hexA(toneLand('#1f4030', '#0c1c14'), speckA);
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.5, srot, 0, Math.PI * 2);
+        ctx.fill();
+      }
       ctx.restore();
     }
   }
@@ -3825,6 +3904,13 @@ function drawBoat(ctx, v, b, t) {
     // 0.65 → 0.75, keeping the segment gaps so the trail still
     // breaks instead of scratching. If the revision reads as a
     // scratch, revert the whole wake change to V30.
+    // V32 REVISION: the first render proved the 5-segment wake WORSE
+    // by the direct on-line measure (right-arm delta +20.8 → +18.5,
+    // left +12.6 → +10.1, right spikes 20 → 17) — five short dashes
+    // dilute the line instead of strengthening it. REVERTED to V31's
+    // 3 segments. (The audit's "2–3 dots" was a misaligned probe:
+    // its diagonal never touched the true arm; the true arms read
+    // delta +20.8 / +12.6 on V31's tree — see FACTCHECK-V32.)
     const wakeArm = (x0, y0, x1, y1) => {
       const segs = [[0, 0.26, 1], [0.36, 0.62, 0.75], [0.72, 0.94, 0.5]];
       for (const [t0, t1, fade] of segs) {
