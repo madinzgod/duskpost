@@ -135,7 +135,7 @@ function drawBirds(ctx, v, light, t, sunBlock) {
   ctx.strokeStyle = 'rgba(40,22,36,0.85)';
   ctx.lineCap = 'round';
   ctx.lineWidth = 3.2;
-  for (let i = 0; i < 5; i += 1) {
+  for (let i = 0; i < 7; i += 1) { // V49 BIRDS-2: two more gulls for the empty top-left sky
     const bh = Math.sin(i * 12.9898 + 4.7) * 43758.5453;
     const bf = bh - Math.floor(bh);
     const bx = ((i * 173 + 890 + t * 7) % 1500) - 110;
@@ -2477,7 +2477,17 @@ function drawStorm(ctx, v, storm, t) {
   // its lift.
   softPuff(ctx, cx, baseY - bodySpan * 0.45, R * 1.02, 'rgba(33,29,50,0.16)', 'rgba(33,29,50,0)');
   for (const [fx, fy, fr] of puffs) {
-    if (fy < 0.6) continue;
+    // V49 STORM-FLANK-LIGHT: the warm rim-light (the sun's own
+    // colour — the sun hangs west, the flank faces it) only runs at
+    // fy >= 0.6, screen y <= 26 in the storm shot — off-frame — while
+    // the frame's darkest quarter (mean 58, 26.9% <40) is fy 0.25-0.60
+    // on the west flank. Extend it down to fy 0.25-0.60 for fx < 0.1:
+    // six puffs, same 0.13 alpha and 0.66x radii as the existing pass.
+    // NOT the V29 eastern grain (0.50 alpha, radii to 0.26R, washed
+    // the flank flat) — this is the existing device at its own dose.
+    // Guards: quarter mean lifts (58 -> ~65-75) while sd holds >= 30;
+    // the bolt's flash field is clear (pass ends y251, bolt ~y330).
+    if (fy < 0.25 || (fy < 0.6 && fx >= 0.1)) continue;
     softPuff(ctx, cx + (fx - 0.1) * R, baseY - bodySpan * (fy + 0.03), fr * R * 0.66, 'rgba(255,150,90,0.13)', 'rgba(255,150,90,0)');
   }
   // Shoulder texture: the main passes are a dozen huge soft gradients,
@@ -4005,6 +4015,38 @@ function drawIsland(ctx, v, isl, t, light, world) {
         ctx.fillStyle = sh(i, 143) > 0.62
           ? hexA(tone('#c2a15e', '#6b5326'), speckA * 1.17)
           : hexA(toneLand('#8a6f3a', '#4a3a1c'), speckA * 1.3);
+        ctx.beginPath();
+        ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.75, srot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // V49 GRASS-STRAW-2: the band is still 77.1% green at
+      // judge size — one straw tone mottles it, a second paler gold
+      // tone breaks the green dominance further. Same band, same
+      // fixed-point height inversion and island clip, new salts
+      // 151-156, count 120, paler gold ('#d8b878'/'#a8823e').
+      // The approach grass 2x crop is the guard: if it turns
+      // scratchy or the band reads as confetti, this reverts.
+      for (let i = 0; i < 120; i += 1) {
+        const sx = 100 + sh(i, 151) * 1180;
+        const sy = 400 + sh(i, 152) * 100;
+        let swx = 0, swz = 0, shgt = 0;
+        for (let it = 0; it < 3; it += 1) {
+          const ss = (sy - v.horizon) / (v.camY - shgt);
+          if (ss <= 0) break;
+          const sfwd = v.focal / ss;
+          const sright = (sx - VIEW_W / 2) / ss;
+          swx = v.camX + sfwd * v.sinH + sright * v.cosH;
+          swz = v.camZ + sfwd * v.cosH - sright * v.sinH;
+          shgt = world.heightAt(swx, swz);
+        }
+        const sp = project(v, swx, shgt, swz);
+        if (!sp || sp.x < 100 || sp.x > 1280 || sp.y < 400 || sp.y > 500) continue;
+        const sr = clamp(sp.s * 0.75, 3.5, 5.0) * (0.7 + sh(i, 154) * 0.6);
+        const srot = (sh(i, 155) - 0.5) * 1.05;
+        const sasp = 1.5 + sh(i, 156) * 1.5;
+        ctx.fillStyle = sh(i, 153) > 0.62
+          ? hexA(tone('#d8b878', '#8a6a30'), speckA * 1.17)
+          : hexA(toneLand('#a8823e', '#5e4a22'), speckA * 1.3);
         ctx.beginPath();
         ctx.ellipse(sp.x, sp.y, sr * sasp, sr * 0.75, srot, 0, Math.PI * 2);
         ctx.fill();

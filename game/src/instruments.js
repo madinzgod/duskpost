@@ -386,10 +386,20 @@ function drawApproachGuidance(ctx, W, H, plane, world) {
   ctx.beginPath();
   ctx.arc(gx - lineErr * 62, gy + slopeErr * 24, 7, 0, Math.PI * 2);
   ctx.fill();
+  // V49 FINAL-PILL: the cream text sits on whatever terrain
+  // projects behind it — on the cover the white hut behind "235 m"
+  // leaves ~25 levels of contrast. A dark backing pill, the beacon
+  // labels' own device, sized to the text; it sits 8 px above the
+  // ladder box and covers no other text.
+  const finalLabel = `FINAL — ${strip.name} STRIP · ${Math.round(dz)} m`;
   ctx.font = '700 17px system-ui, sans-serif';
   ctx.textAlign = 'center';
+  const fw = ctx.measureText(finalLabel).width;
+  ctx.fillStyle = 'rgba(10,14,22,0.38)';
+  roundRect(ctx, gx - fw / 2 - 8, gy - 44 - 17, fw + 16, 23, 6);
+  ctx.fill();
   ctx.fillStyle = '#ffe9c9';
-  ctx.fillText(`FINAL — ${strip.name} STRIP · ${Math.round(dz)} m`, gx, gy - 44);
+  ctx.fillText(finalLabel, gx, gy - 44);
   ctx.restore();
 }
 
